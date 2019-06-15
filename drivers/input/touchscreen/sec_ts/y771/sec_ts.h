@@ -904,6 +904,7 @@ int sec_ts_fix_tmode(struct sec_ts_data *ts, u8 mode, u8 state);
 int sec_ts_release_tmode(struct sec_ts_data *ts);
 int sec_ts_set_custom_library(struct sec_ts_data *ts);
 int sec_ts_set_aod_rect(struct sec_ts_data *ts);
+int sec_ts_set_temp(struct sec_ts_data *ts);
 
 int sec_ts_check_custom_library(struct sec_ts_data *ts);
 int sec_ts_set_touch_function(struct sec_ts_data *ts);

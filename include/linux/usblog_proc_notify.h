@@ -87,6 +87,7 @@ enum ccic_id {
 	NOTIFY_ID_ROLE_SWAP,
 	NOTIFY_ID_FAC,
 	NOTIFY_ID_CC_PIN_STATUS,
+	NOTIFY_ID_WATER_CABLE,
 };
 
 enum ccic_rid {

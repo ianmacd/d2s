@@ -288,7 +288,7 @@ int dd_dump_key(int userid, int fd)
 	struct dd_crypt_context crypt_context;
 	struct fd f = {NULL, 0};
 	struct inode *inode;
-	unsigned char *dd_inner_file_encryption_key;
+	unsigned char *dd_inner_file_encryption_key = NULL;
 	int rc = 0;
 
 	dd_error("########## DUALDAR_DUMP - START ##########\n");
@@ -357,6 +357,7 @@ int dd_dump_key(int userid, int fd)
 	dd_hex_key_dump("[DUALDAR_DUMP] OUTER LAYER FILE ENCRYPTION KEY", dd_outer_file_encryption_key.raw, dd_outer_file_encryption_key.size);
 
 out:
+	if (dd_inner_file_encryption_key) kfree(dd_inner_file_encryption_key);
 	if (f.file)
 		fdput(f);
 	dd_error("########## DUALDAR_DUMP - END ##########\n");

@@ -1408,7 +1408,7 @@ int wacom_power(struct wacom_i2c *wac_i2c, bool on)
 	static struct timeval off_time = { 0, 0 };
 	struct timeval cur_time = { 0, 0 };
 	int retval = 0;
-	static struct regulator *vddo;
+	static struct regulator *vdd, *vddio;
 
 	input_info(true, &client->dev, "power %s\n",
 		   on ? "enabled" : "disabled");
@@ -1441,50 +1441,105 @@ int wacom_power(struct wacom_i2c *wac_i2c, bool on)
 		}
 	}
 
-	if (!vddo) {
-		vddo = devm_regulator_get(&client->dev, "vddo");
+	if (pdata->use_vddio && !vddio) {
+		vddio = devm_regulator_get(&client->dev, "vddio");
 
-		if (IS_ERR(vddo)) {
+		if (IS_ERR(vddio)) {
 			input_err(true, &client->dev,
-				  "%s: could not get vddo, rc = %ld\n",
-				  __func__, PTR_ERR(vddo));
-			vddo = NULL;
+				  "%s: could not get vddio, rc = %ld\n",
+				  __func__, PTR_ERR(vddio));
+			vddio = NULL;
 			return -ENODEV;
 		}
-		retval = regulator_set_voltage(vddo, 3300000, 3300000);
+		retval = regulator_set_voltage(vddio, 1800000, 1800000);
 		if (retval)
 			input_err(true, &client->dev,
-				  "%s: unable to set vddo voltage to 3.3V\n",
+				  "%s: unable to set vddio voltage to 1.8V\n",
+				  __func__);
+		input_err(true, &client->dev, "%s: 1.8V is enabled %s\n",
+			  __func__,
+			  regulator_is_enabled(vddio) ? "TRUE" : "FALSE");
+
+	}
+
+	if (!vdd) {
+		vdd = devm_regulator_get(&client->dev, "vdd");
+
+		if (IS_ERR(vdd)) {
+			input_err(true, &client->dev,
+				  "%s: could not get vdd, rc = %ld\n",
+				  __func__, PTR_ERR(vdd));
+			vdd = NULL;
+			return -ENODEV;
+		}
+		retval = regulator_set_voltage(vdd, 3300000, 3300000);
+		if (retval)
+			input_err(true, &client->dev,
+				  "%s: unable to set vdd voltage to 3.3V\n",
 				  __func__);
 		input_err(true, &client->dev, "%s: 3.3V is enabled %s\n",
 			  __func__,
-			  regulator_is_enabled(vddo) ? "TRUE" : "FALSE");
+			  regulator_is_enabled(vdd) ? "TRUE" : "FALSE");
 
 	}
 
 	if (on) {
-		retval = regulator_enable(vddo);
-		if (retval) {
-			input_err(true, &client->dev,
-				  "%s: Fail to enable regulator vddo[%d]\n",
-				  __func__, retval);
-		}
-		input_err(true, &client->dev, "%s: vddo is enabled[OK]\n",
-			  __func__);
-	} else {
-		if (regulator_is_enabled(vddo)) {
-			retval = regulator_disable(vddo);
+		if (pdata->use_vddio) {
+			retval = regulator_enable(vddio);
 			if (retval) {
 				input_err(true, &client->dev,
-					  "%s: Fail to disable regulator vddo[%d]\n",
+					  "%s: Fail to enable regulator vddio[%d]\n",
+					  __func__, retval);
+			} else {
+				input_err(true, &client->dev, "%s: vddio is enabled[OK]\n",
+					  __func__);
+			}
+		}
+
+		retval = regulator_enable(vdd);
+		if (retval) {
+			input_err(true, &client->dev,
+				  "%s: Fail to enable regulator vdd[%d]\n",
+				  __func__, retval);
+		} else {
+			input_err(true, &client->dev, "%s: vdd is enabled[OK]\n",
+				  __func__);
+		}
+	} else {
+		if (pdata->use_vddio) {
+			if (regulator_is_enabled(vddio)) {
+				retval = regulator_disable(vddio);
+				if (retval) {
+					input_err(true, &client->dev,
+						  "%s: Fail to disable regulator vddio[%d]\n",
+						  __func__, retval);
+
+				} else {
+					input_err(true, &client->dev,
+						  "%s: vddio is disabled[OK]\n",
+						  __func__);
+				}
+			} else {
+				input_err(true, &client->dev,
+					  "%s: vddio is already disabled\n",
+					  __func__);
+			}
+		}
+
+		if (regulator_is_enabled(vdd)) {
+			retval = regulator_disable(vdd);
+			if (retval) {
+				input_err(true, &client->dev,
+					  "%s: Fail to disable regulator vdd[%d]\n",
 					  __func__, retval);
 
+			} else {
+				input_err(true, &client->dev,
+					  "%s: vdd is disabled[OK]\n", __func__);
 			}
-			input_err(true, &client->dev,
-				  "%s: vddo is disabled[OK]\n", __func__);
 		} else {
 			input_err(true, &client->dev,
-				  "%s: vddo is already disabled\n", __func__);
+				  "%s: vdd is already disabled\n", __func__);
 		}
 	}
 
@@ -3013,20 +3068,23 @@ static struct wacom_g5_platform_data *wacom_parse_dt(struct i2c_client *client)
 
 	pdata->table_swap = of_property_read_bool(np, "wacom,table_swap_for_dex_station");
 
+	pdata->use_vddio = of_property_read_bool(np, "vddio-supply");
+
 	input_info(true, &client->dev,
 		   "boot_addr: 0x%X, origin: (%d,%d), max_coords: (%d,%d), "
 		   "max_pressure: %d, max_height: %d, max_tilt: (%d,%d) "
-		   "project_name: (%s,%s), invert: (%d,%d,%d), fw_path: %s, "
-		   "ic_type: %d, %s virtual softkey, %s garage, support_dex:%d, dex_rate:%d, table_swap:%d\n",
+		   "invert: (%d,%d,%d), fw_path: %s, ic_type: %d, project_name: (%s,%s), "
+		   "support_dex:%d, dex_rate:%d, table_swap:%d%s%s%s\n",
 		   pdata->boot_addr, pdata->origin[0], pdata->origin[1],
 		   pdata->max_x, pdata->max_y, pdata->max_pressure,
 		   pdata->max_height, pdata->max_x_tilt, pdata->max_y_tilt,
-		   pdata->project_name, pdata->model_name, pdata->x_invert,
-		   pdata->y_invert, pdata->xy_switch, pdata->fw_path,
-		   pdata->ic_type,
-		   pdata->use_virtual_softkey ? "enabled" : "disabled",
-		   pdata->use_garage ? "enabled" : "disabled",
-		   pdata->support_dex, pdata->dex_rate, pdata->table_swap);
+		   pdata->x_invert, pdata->y_invert, pdata->xy_switch,
+		   pdata->fw_path, pdata->ic_type, pdata->project_name,
+		   pdata->model_name, pdata->support_dex, pdata->dex_rate,
+		   pdata->table_swap,
+		   pdata->use_virtual_softkey ? ", use virtual softkey" : "",
+		   pdata->use_garage ? ", use garage" : "",
+		   pdata->use_vddio ? ", control vddio" : "");
 
 	return pdata;
 }

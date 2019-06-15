@@ -186,6 +186,8 @@ struct max77705_usbc_platform_data {
 	int is_client;
 	bool auto_vbus_en;
 	u8 cc_pin_status;
+	int ccrp_state;
+	int vsafe0v_status;
 #endif
 #if defined(CONFIG_DUAL_ROLE_USB_INTF)
 	struct dual_role_phy_instance *dual_role;

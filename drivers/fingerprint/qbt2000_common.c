@@ -224,6 +224,19 @@ static int fps_qbt2000_power_control(struct qbt2000_drvdata *drvdata, int onoff)
 	if (drvdata->ldogpio >= 0) {
 		gpio_set_value(drvdata->ldogpio, onoff);
 		drvdata->enabled_ldo = onoff;
+#if !defined(ENABLE_SENSORS_FPRINT_SECURE) || defined(DISABLED_GPIO_PROTECTION)
+		if (onoff) {
+			if (drvdata->pins_poweron) {
+				rc = pinctrl_select_state(drvdata->p, drvdata->pins_poweron);
+				pr_debug("pinctrl for poweron\n");
+			}
+		} else {
+			if (drvdata->pins_poweroff) {
+				rc = pinctrl_select_state(drvdata->p, drvdata->pins_poweroff);
+				pr_debug("pinctrl for poweroff\n");
+			}
+		}
+#endif
 		pr_info("%s\n", onoff ? "ON" : "OFF");
 	} else if (drvdata->regulator_1p8 != NULL) {
 		if (onoff) {
@@ -235,6 +248,19 @@ static int fps_qbt2000_power_control(struct qbt2000_drvdata *drvdata, int onoff)
 			if (rc)
 				pr_err("regulator disable failed, rc=%d\n", rc);
 		}
+#if !defined(ENABLE_SENSORS_FPRINT_SECURE) || defined(DISABLED_GPIO_PROTECTION)
+		if (onoff) {
+			if (drvdata->pins_poweron) {
+				rc = pinctrl_select_state(drvdata->p, drvdata->pins_poweron);
+				pr_debug("pinctrl for poweron\n");
+			}
+		} else {
+			if (drvdata->pins_poweroff) {
+				rc = pinctrl_select_state(drvdata->p, drvdata->pins_poweroff);
+				pr_debug("pinctrl for poweroff\n");
+			}
+		}
+#endif
 		drvdata->enabled_ldo = onoff;
 		pr_info("%s\n", onoff ? "ON" : "OFF");
 	} else {
@@ -763,6 +789,7 @@ int fps_qbt2000_pinctrl_register(struct qbt2000_drvdata *drvdata)
 		goto pinctrl_register_exit;
 	}
 #endif
+	pr_info("finished\n");
 	return rc;
 #if !defined(ENABLE_SENSORS_FPRINT_SECURE) || defined(DISABLED_GPIO_PROTECTION)
 pinctrl_register_exit:
@@ -1173,15 +1200,6 @@ static int fps_qbt2000_probe(struct platform_device *pdev)
 #ifndef ENABLE_SENSORS_FPRINT_SECURE
 	fps_qbt2000_power_control(drvdata, 1);
 #endif
-#if !defined(ENABLE_SENSORS_FPRINT_SECURE) || defined(DISABLED_GPIO_PROTECTION)
-	if (drvdata->pins_poweron) {
-		rc = pinctrl_select_state(drvdata->p, drvdata->pins_poweron);
-		if (rc)
-			pr_err("can't set pin poweron state\n", rc);
-	} else {
-		pr_debug("does not support pinctrl\n");
-	}
-#endif
 
 	g_data = drvdata;
 	drvdata->spi_speed = SPI_CLOCK_MAX;
@@ -1301,10 +1319,6 @@ static int fps_qbt2000_resume(struct platform_device *pdev)
 	}
 #else
 	fps_qbt2000_power_control(g_data, 1);
-#endif
-#if !defined(ENABLE_SENSORS_FPRINT_SECURE) || defined(DISABLED_GPIO_PROTECTION)
-	if (g_data->pins_poweron)
-		rc = pinctrl_select_state(g_data->p, g_data->pins_poweron);
 #endif
 	fps_qbt2000_enable_debug_timer();
 	pr_info("ret = %d\n", rc);

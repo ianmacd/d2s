@@ -77,6 +77,7 @@ enum fimc_is_rom_dualcal_index {
 	ROM_DUALCAL_SLAVE0	= 0,
 	ROM_DUALCAL_SLAVE1	= 1,
 	ROM_DUALCAL_SLAVE2	= 2,
+	ROM_DUALCAL_SLAVE3	= 3,
 	ROM_DUALCAL_MAX,
 	ROM_DUALCAL_NOTHING	= 100
 };
@@ -100,6 +101,8 @@ struct cam_hw_param_collector {
 	struct cam_hw_param rear3_hwparam;
 	struct cam_hw_param front_hwparam;
 	struct cam_hw_param front2_hwparam;
+	struct cam_hw_param rear_tof_hwparam;
+	struct cam_hw_param front_tof_hwparam;
 	struct cam_hw_param iris_hwparam;
 } __attribute__((__packed__));
 

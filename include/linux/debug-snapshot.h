@@ -39,6 +39,8 @@ extern int dbg_snapshot_post_panic(void);
 extern int dbg_snapshot_post_reboot(char *cmd);
 extern int dbg_snapshot_set_hardlockup(int);
 extern int dbg_snapshot_get_hardlockup(void);
+extern void dbg_snapshot_set_sjtag_status(void);
+extern int dbg_snapshot_get_sjtag_status(void);
 extern int dbg_snapshot_set_debug_level(int);
 extern int dbg_snapshot_get_debug_level(void);
 extern void dbg_snapshot_set_debug_level_reg(void);
@@ -216,6 +218,8 @@ extern void dbg_snapshot_get_softlockup_info(unsigned int cpu, void *info);
 #define dbg_snapshot_post_reboot(a)	do { } while(0)
 #define dbg_snapshot_set_hardlockup(a)	do { } while(0)
 #define dbg_snapshot_get_hardlockup()	do { } while(0)
+#define dbg_snapshot_set_sjtag_status() do { } while (0)
+#define dbg_snasshot_get_sjtag_status() do { } while (0)
 #define dbg_snapshot_set_debug_level(a) do { } while(0)
 #define dbg_snapshot_get_debug_level()	do { } while(0)
 #define dbg_snapshot_check_crash_key(a,b)	do { } while(0)

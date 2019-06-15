@@ -1533,7 +1533,12 @@ static void cpufreq_remove_dev(struct device *dev, struct subsys_interface *sif)
 static void cpufreq_out_of_sync(struct cpufreq_policy *policy,
 				unsigned int new_freq)
 {
+	unsigned int cur_freq = cpufreq_driver->get(policy->cpu);
 	struct cpufreq_freqs freqs;
+
+	/* False alarm: policy->cur updated appropriately */
+	if (cur_freq == policy->cur)
+		return;
 
 	pr_debug("Warning: CPU frequency out of sync: cpufreq and timing core thinks of %u, is %u kHz\n",
 		 policy->cur, new_freq);
@@ -1543,6 +1548,11 @@ static void cpufreq_out_of_sync(struct cpufreq_policy *policy,
 
 	cpufreq_freq_transition_begin(policy, &freqs);
 	cpufreq_freq_transition_end(policy, &freqs, 0);
+
+	cur_freq = cpufreq_driver->get(policy->cpu);
+
+	if (cur_freq != policy->cur)
+		pr_debug("Warning: CPU frequency stays unsynced even after trial\n");
 }
 
 /**

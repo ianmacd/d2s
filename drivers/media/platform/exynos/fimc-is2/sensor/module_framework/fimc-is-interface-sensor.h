@@ -391,6 +391,11 @@ struct fimc_is_cis_ops {
 	int (*cis_set_super_slow_motion_gmc_table_idx)(struct v4l2_subdev *subdev, u32 idx);
 	int (*cis_set_super_slow_motion_gmc_block_with_md_low)(struct v4l2_subdev *subdev, u32 idx);
 	int (*cis_recover_stream_on)(struct v4l2_subdev *subdev);
+	int (*cis_set_laser_control)(struct v4l2_subdev *subdev, u32 onoff);
+	int (*cis_set_factory_control)(struct v4l2_subdev *subdev, u32 command);
+	int (*cis_set_laser_current)(struct v4l2_subdev *subdev, u32 value);
+	int (*cis_get_laser_photo_diode)(struct v4l2_subdev *subdev, u16 *value);
+	int (*cis_get_tof_tx_freq)(struct v4l2_subdev *subdev, u32 *value);
 };
 
 struct fimc_is_sensor_ctl

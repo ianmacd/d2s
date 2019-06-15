@@ -129,6 +129,27 @@ int dbg_snapshot_get_debug_level_reg(void)
 	return ret;
 }
 
+void dbg_snapshot_set_sjtag_status(void)
+{
+	int ret;
+
+	ret = dss_soc_ops->soc_smc_call(SMC_CMD_GET_SJTAG_STATUS, 0x3, 0, 0);
+
+	if (ret == true || ret == false) {
+		dss_desc.sjtag_status = ret;
+		pr_info("debug-snapshot: SJTAG is %sabled\n",
+				ret == true ? "en" : "dis");
+		return;
+	}
+
+	dss_desc.sjtag_status = -1;
+}
+
+int dbg_snapshot_get_sjtag_status(void)
+{
+	return dss_desc.sjtag_status;
+}
+
 void dbg_snapshot_scratch_reg(unsigned int val)
 {
 	if (dbg_snapshot_get_enable("header"))

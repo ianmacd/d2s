@@ -42,7 +42,11 @@ static struct device_attribute sec_battery_attrs[] = {
 	SEC_BATTERY_ATTR(chg_temp_adc),
 	SEC_BATTERY_ATTR(slave_chg_temp),
 	SEC_BATTERY_ATTR(slave_chg_temp_adc),
-
+#if defined(CONFIG_DIRECT_CHARGING)
+	SEC_BATTERY_ATTR(dchg_adc_mode_ctrl),
+	SEC_BATTERY_ATTR(dchg_temp),
+	SEC_BATTERY_ATTR(dchg_temp_adc),
+#endif
 	SEC_BATTERY_ATTR(batt_vf_adc),
 	SEC_BATTERY_ATTR(batt_slate_mode),
 
@@ -205,10 +209,12 @@ static struct device_attribute sec_battery_attrs[] = {
 	SEC_BATTERY_ATTR(batt_charging_port),
 #endif
 	SEC_BATTERY_ATTR(ext_event),
-#if defined(CONFIG_DIRECT_CHARGING)
 	SEC_BATTERY_ATTR(direct_charging_status),
+#if defined(CONFIG_DIRECT_CHARGING)
 	SEC_BATTERY_ATTR(direct_charging_step),
+	SEC_BATTERY_ATTR(direct_charging_iin),
 #endif
+	SEC_BATTERY_ATTR(charging_type),
 };
 
 void update_external_temp_table(struct sec_battery_info *battery, int temp[])
@@ -411,6 +417,28 @@ ssize_t sec_bat_show_attrs(struct device *dev,
 					   0);
 		}
 		break;
+#if defined(CONFIG_DIRECT_CHARGING)
+	case DCHG_ADC_MODE_CTRL:
+		break;
+	case DCHG_TEMP:
+		{
+			psy_do_property(battery->pdata->charger_name, get,
+				POWER_SUPPLY_PROP_TEMP, value);
+			battery->dchg_temp = sec_bat_get_direct_chg_temp_adc(battery,
+								value.intval, battery->pdata->adc_check_count);
+			i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
+				battery->dchg_temp);
+		}
+		break;
+	case DCHG_TEMP_ADC:
+		{
+			psy_do_property(battery->pdata->charger_name, get,
+				POWER_SUPPLY_PROP_TEMP, value);
+			i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
+				value.intval);
+		}
+		break;
+#endif
 	case BATT_VF_ADC:
 		break;
 	case BATT_SLATE_MODE:
@@ -531,20 +559,24 @@ ssize_t sec_bat_show_attrs(struct device *dev,
 	case HV_CHARGER_STATUS:
 		{
 			int check_val = 0;
-			if(is_wireless_type(battery->cable_type))
+			if(is_wireless_type(battery->cable_type)) {
 				check_val = 0;
-			else {
-				if (is_hv_wire_12v_type(battery->cable_type) ||
+			} else {
+				if (is_pd_wire_type(battery->cable_type) &&
+					battery->pd_max_charge_power >= HV_CHARGER_STATUS_STANDARD3)
+					check_val = SFC_25W;
+				else if (is_hv_wire_12v_type(battery->cable_type) ||
 					battery->max_charge_power >= HV_CHARGER_STATUS_STANDARD2) /* 20000mW */
-					check_val = 2;
+					check_val = AFC_12V_OR_20W;
 				else if (is_hv_wire_type(battery->cable_type) ||
-					(battery->cable_type == SEC_BATTERY_CABLE_PDIC &&
+					(is_pd_wire_type(battery->cable_type) &&
 					battery->pd_max_charge_power >= HV_CHARGER_STATUS_STANDARD1 &&
 					battery->pdic_info.sink_status.available_pdo_num > 1) ||
 					battery->wire_status == SEC_BATTERY_CABLE_PREPARE_TA ||
 					battery->max_charge_power >= HV_CHARGER_STATUS_STANDARD1) /* 12000mW */
-					check_val = 1;
+					check_val = AFC_9V_OR_15W;
 			}
+
 			i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n", check_val);
 		}
 		break;
@@ -1397,7 +1429,32 @@ ssize_t sec_bat_show_attrs(struct device *dev,
 		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
 			battery->step_charging_status);
 		break;
+	case DIRECT_CHARGING_IIN:
+		value.intval = SEC_BATTERY_IIN_UA;
+		psy_do_property(battery->pdata->charger_name, get,
+			POWER_SUPPLY_EXT_PROP_MEASURE_INPUT, value);
+		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
+			value.intval);
+		break;
+#else
+	case DIRECT_CHARGING_STATUS:
+		ret = -1; /* DC not supported model returns -1 */
+		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n", ret);
+		break;
 #endif
+	case CHARGING_TYPE:
+		{
+			value.strval = sec_cable_type[battery->cable_type];
+
+#if defined(CONFIG_DIRECT_CHARGING)
+			if (is_pd_apdo_wire_type(battery->cable_type) &&
+				battery->current_event & SEC_BAT_CURRENT_EVENT_DC_ERR)
+				value.strval = "PDIC";
+#endif
+			pr_info("%s: CHARGING_TYPE = %s\n",__func__, value.strval);
+			i += scnprintf(buf + i, PAGE_SIZE - i, "%s\n", value.strval);
+		}
+		break;
 	default:
 		i = -EINVAL;
 		break;
@@ -1491,6 +1548,21 @@ ssize_t sec_bat_store_attrs(
 	case CHG_TEMP_ADC:
 	case SLAVE_CHG_TEMP:
 	case SLAVE_CHG_TEMP_ADC:
+#if defined(CONFIG_DIRECT_CHARGING)
+	case DCHG_ADC_MODE_CTRL:
+		if (sscanf(buf, "%10d\n", &x) == 1) {
+			dev_info(battery->dev,
+				 "%s : direct charger adc mode cntl : %d\n", __func__, x);
+			value.intval = x;
+			psy_do_property(battery->pdata->charger_name, set,
+				POWER_SUPPLY_EXT_PROP_DIRECT_ADC_CTRL, value);
+			ret = count;
+		}
+		break;
+	case DCHG_TEMP:
+	case DCHG_TEMP_ADC:
+		break;
+#endif
 	case BATT_VF_ADC:
 		break;
 	case BATT_SLATE_MODE:
@@ -1763,6 +1835,7 @@ ssize_t sec_bat_store_attrs(
 		break;
 	case BATT_EVENT_LCD:
 		if (sscanf(buf, "%10d\n", &x) == 1) {
+#if !defined(CONFIG_SEC_FACTORY)
 			struct timespec ts;
 			get_monotonic_boottime(&ts);
 			if (x) {
@@ -1771,13 +1844,14 @@ ssize_t sec_bat_store_attrs(
 				battery->lcd_status = false;
 			}
 			pr_info("%s : lcd_status (%d)\n", __func__, battery->lcd_status);
-			ret = count;
 
 			if (battery->wc_tx_enable) {
 				wake_lock(&battery->monitor_wake_lock);
 				queue_delayed_work(battery->monitor_wqueue,
 					&battery->monitor_work, 0);
 			}
+#endif
+			ret = count;
 		}
 		break;
 	case BATT_EVENT_GPS:
@@ -2370,9 +2444,9 @@ ssize_t sec_bat_store_attrs(
 		if (sscanf(buf, "%10d\n", &x) == 1) {
 			pr_info("%s: PMS sevice hiccup read done : %d ", __func__, x);
 			if (!battery->hiccup_status &&
-				(battery->misc_event & (BATT_MISC_EVENT_HICCUP_TYPE | BATT_MISC_EVENT_TEMP_HICCUP_TYPE))) {
+				(battery->misc_event & BATT_MISC_EVENT_HICCUP_TYPE)) {
 				sec_bat_set_misc_event(battery,
-					0, (BATT_MISC_EVENT_HICCUP_TYPE | BATT_MISC_EVENT_TEMP_HICCUP_TYPE));
+					0, BATT_MISC_EVENT_HICCUP_TYPE);
 			}
 		}
 		ret = count;
@@ -2801,7 +2875,11 @@ ssize_t sec_bat_store_attrs(
 		break;
 	case DIRECT_CHARGING_STEP:
 		break;
+	case DIRECT_CHARGING_IIN:
+		break;
 #endif
+	case CHARGING_TYPE:
+		break;
 	default:
 		ret = -EINVAL;
 		break;

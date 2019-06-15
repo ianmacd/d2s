@@ -19,24 +19,29 @@
 #include "proca_task_descr.h"
 #include "proca_table.h"
 #include "proca_log.h"
+#include "proca_config.h"
 
 #include "five_hooks.h"
 
 #include <linux/module.h>
-#include <linux/lsm_hooks.h>
 #include <linux/file.h>
 #include <linux/task_integrity.h>
 #include <linux/xattr.h>
+#include <linux/fs.h>
 #include <linux/proca.h>
+
+#include "proca_porting.h"
 
 static void proca_task_free_hook(struct task_struct *task);
 
 static void proca_file_free_security_hook(struct file *file);
 
+#ifdef LINUX_LSM_SUPPORTED
 static struct security_hook_list proca_ops[] = {
 	LSM_HOOK_INIT(task_free, proca_task_free_hook),
 	LSM_HOOK_INIT(file_free_security, proca_file_free_security_hook),
 };
+#endif
 
 static void proca_hook_task_forked(struct task_struct *parent,
 				enum task_integrity_value parent_tint_value,
@@ -65,6 +70,9 @@ static struct five_hook_list five_ops[] = {
 };
 
 static struct proca_table g_proca_table;
+struct proca_config g_proca_config;
+
+static int g_proca_inited;
 
 static int read_xattr(struct dentry *dentry, const char *name,
 			char **xattr_value)
@@ -129,13 +137,15 @@ static struct proca_task_descr *prepare_proca_task_descr(
 	}
 
 	if (!five_sign_xattr_value) {
-		pr_info("Failed to read five xattr from file with pa xattr\n");
+		PROCA_INFO_LOG(
+			"Failed to read five xattr from file with pa xattr\n");
 		goto proca_cert_cleanup;
 	}
 
 	if (!compare_with_five_signature(&parsed_cert, five_sign_xattr_value,
 					 five_sign_xattr_size)) {
-		pr_info("Comparison with five signature for %s failed.\n",
+		PROCA_INFO_LOG(
+			"Comparison with five signature for %s failed.\n",
 			parsed_cert.app_name);
 		goto five_xattr_cleanup;
 	}
@@ -314,6 +324,24 @@ static void proca_file_free_security_hook(struct file *file)
 	file->f_signature = NULL;
 }
 
+#ifndef LINUX_LSM_SUPPORTED
+void proca_compat_task_free_hook(struct task_struct *task)
+{
+	if (unlikely(!g_proca_inited))
+		return;
+
+	proca_task_free_hook(task);
+}
+
+void proca_compat_file_free_security_hook(struct file *file)
+{
+	if (unlikely(!g_proca_inited))
+		return;
+
+	proca_file_free_security_hook(file);
+}
+#endif
+
 int proca_get_task_cert(const struct task_struct *task,
 			const char **cert, size_t *cert_size)
 {
@@ -334,6 +362,10 @@ static __init int proca_module_init(void)
 {
 	int ret;
 
+	ret = init_proca_config(&g_proca_config, &g_proca_table);
+	if (ret)
+		return ret;
+
 	ret = init_certificate_validation_hash();
 	if (ret)
 		return ret;
@@ -343,7 +375,8 @@ static __init int proca_module_init(void)
 	security_add_hooks(proca_ops, ARRAY_SIZE(proca_ops), "proca_lsm");
 	five_add_hooks(five_ops, ARRAY_SIZE(five_ops));
 
-	pr_info("PROCA LSM was initialized\n");
+	PROCA_INFO_LOG("LSM module was initialized\n");
+	g_proca_inited = 1;
 
 	return 0;
 }

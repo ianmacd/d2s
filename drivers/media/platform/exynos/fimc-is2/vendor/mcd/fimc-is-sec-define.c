@@ -1193,7 +1193,9 @@ crc_retry:
 	if (rom_id == REAR_TOF_ROM_ID) {
 		if (finfo->cal_map_ver[3] >= '3') {
 			specific->rear_tof_uid = *((int32_t*)&buf[finfo->rom_tof_cal_uid_addr]);
+			info("rear_tof_uid: 0x%x\n", specific->rear_tof_uid);
 		} else {
+			info("rear_tof_uid: 0x%x, use default rear_tof_uid: 0xCD2D", specific->rear_tof_uid);
 			specific->rear_tof_uid = 0xCD2D;
 		}
 	}
@@ -1203,8 +1205,10 @@ crc_retry:
 	if (rom_id == FRONT_TOF_ROM_ID) {
 		if (finfo->cal_map_ver[3] >= '5') {
 			specific->front_tof_uid = *((int32_t*)&buf[finfo->rom_tof_cal_uid_addr]);
+			info("front_tof_uid: 0x%x\n", specific->front_tof_uid);
 		} else {
-			specific->front_tof_uid = 0xCB29;
+			info("front_tof_uid: 0x%x, use default front_tof_uid: 0xCB35", specific->front_tof_uid);
+			specific->front_tof_uid = 0xCB35;
 		}
 	}
 #endif

@@ -1446,6 +1446,35 @@ static ssize_t poc_mca_show(struct device *dev,
 
 	return strlen(buf);
 }
+
+static ssize_t poc_info_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct panel_device *panel = dev_get_drvdata(dev);
+	struct panel_poc_device *poc_dev;
+	struct panel_poc_info *poc_info;
+	int ret;
+
+	if (panel == NULL) {
+		panel_err("PANEL:ERR:%s:panel is null\n", __func__);
+		return -EINVAL;
+	}
+
+	poc_dev = &panel->poc_dev;
+	poc_info = &poc_dev->poc_info;
+
+	ret = get_poc_partition_size(poc_dev, POC_IMG_PARTITION);
+	if (unlikely(ret < 0)) {
+		pr_err("%s, failed to get poc partition size (ret %d)\n", __func__, ret);
+		return ret;
+	}
+
+	snprintf(buf, PAGE_SIZE, "poc_mca_image_size %d\n", ret);
+
+	dev_info(dev, "%s: %s\n", __func__, buf);
+
+	return strlen(buf);
+}
 #endif
 
 #ifdef CONFIG_SUPPORT_DIM_FLASH
@@ -3260,6 +3289,7 @@ struct device_attribute panel_attrs[] = {
 #ifdef CONFIG_SUPPORT_POC_FLASH
 	__PANEL_ATTR_RW(poc, 0660),
 	__PANEL_ATTR_RO(poc_mca, 0440),
+	__PANEL_ATTR_RO(poc_info, 0440),
 #endif
 #ifdef CONFIG_SUPPORT_DIM_FLASH
 	__PANEL_ATTR_RW(gamma_flash, 0660),

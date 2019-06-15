@@ -159,6 +159,7 @@
 /*
  * REG_CC_STATUS2
  */
+#define BIT_CCSBUSHORT			BITS(7, 6)
 #define BIT_VCONNOCP			BIT(5)
 #define BIT_VCONNSC				BIT(4)
 #define BIT_VSAFE0V				BIT(3)
@@ -387,7 +388,8 @@ enum max77705_usbc_SYSMsg {
 
 	SYSERROR_FACTORY_RID0 = 0x70,
 	SYSERROR_POWER_NEGO = 0x80,
-	SYSMSG_CURRENT_CABLE = 0x90,
+	SYSERROR_CCRP_HIGH = 0x90, /* PD Charger Connected while Water state */
+	SYSERROR_CCRP_LOW = 0x91, /* PD Charger Disconnected while Water state */
 };
 
 enum max77705_pdmsg {

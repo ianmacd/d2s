@@ -1007,7 +1007,10 @@ static ssize_t hiccup_store(struct device *dev,
 
 	if (!strncasecmp(buf, "DISABLE", 7)) {
 		pr_info("%s\n", __func__);
-		com_to_open(muic_data);
+#if defined(CONFIG_MUIC_MAX77705_CCIC)
+		if (muic_data->afc_water_disable || muic_data->is_hiccup_mode)
+			com_to_open(muic_data);
+#endif /* CONFIG_MUIC_MAX77705_CCIC */
 		muic_data->is_hiccup_mode = 0;
 	} else
 		pr_warn("%s invalid com : %s\n", __func__, buf);

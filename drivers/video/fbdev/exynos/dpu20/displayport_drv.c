@@ -2642,9 +2642,7 @@ static int usb_typec_displayport_notification(struct notifier_block *nb,
 			secdp_bigdata_save_item(BD_ADT_VID, displayport->ven_id);
 			secdp_bigdata_save_item(BD_ADT_PID, displayport->prod_id);
 #endif
-#if defined(CONFIG_COMBO_REDRIVER_PTN36502)
-			ptn36502_config(DP4_LANE_MODE, DR_DFP);
-#else
+#if !defined(CONFIG_COMBO_REDRIVER_PTN36502)
 			displayport_aux_onoff(displayport, 1);
 #endif
 			displayport->bist_used = 0;
@@ -2664,29 +2662,28 @@ static int usb_typec_displayport_notification(struct notifier_block *nb,
 #endif
 		switch (usb_typec_info.sub1) {
 		case CCIC_NOTIFY_DP_PIN_UNKNOWN:
-			displayport->ccic_notify_dp_conf = CCIC_NOTIFY_DP_PIN_UNKNOWN;
-			break;
 		case CCIC_NOTIFY_DP_PIN_A:
-			displayport->ccic_notify_dp_conf = CCIC_NOTIFY_DP_PIN_A;
+		case CCIC_NOTIFY_DP_PIN_C:
+		case CCIC_NOTIFY_DP_PIN_E:
+			displayport->ccic_notify_dp_conf = usb_typec_info.sub1;
+#if defined(CONFIG_COMBO_REDRIVER_PTN36502)
+			ptn36502_config(DP4_LANE_MODE, DR_DFP);
+#endif
 			break;
 		case CCIC_NOTIFY_DP_PIN_B:
 			displayport->dp_sw_sel = !displayport->dp_sw_sel;
-			displayport->ccic_notify_dp_conf = CCIC_NOTIFY_DP_PIN_B;
-			break;
-		case CCIC_NOTIFY_DP_PIN_C:
-			displayport->ccic_notify_dp_conf = CCIC_NOTIFY_DP_PIN_C;
-			break;
 		case CCIC_NOTIFY_DP_PIN_D:
-			displayport->ccic_notify_dp_conf = CCIC_NOTIFY_DP_PIN_D;
-			break;
-		case CCIC_NOTIFY_DP_PIN_E:
-			displayport->ccic_notify_dp_conf = CCIC_NOTIFY_DP_PIN_E;
-			break;
 		case CCIC_NOTIFY_DP_PIN_F:
-			displayport->ccic_notify_dp_conf = CCIC_NOTIFY_DP_PIN_F;
+			displayport->ccic_notify_dp_conf = usb_typec_info.sub1;
+#if defined(CONFIG_COMBO_REDRIVER_PTN36502)
+			ptn36502_config(DP2_LANE_USB3_MODE, DR_DFP);
+#endif
 			break;
 		default:
 			displayport->ccic_notify_dp_conf = CCIC_NOTIFY_DP_PIN_UNKNOWN;
+#if defined(CONFIG_COMBO_REDRIVER_PTN36502)
+			ptn36502_config(DP4_LANE_MODE, DR_DFP);
+#endif
 			break;
 		}
 

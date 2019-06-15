@@ -368,6 +368,7 @@ static int s5000ap_reset(struct modem_ctl *mc)
 	/* 2cp dump WA */
 	if (timer_pending(&mld->crash_ack_timer))
 		del_timer(&mld->crash_ack_timer);
+	atomic_set(&mld->forced_cp_crash, 0);
 
 	/* mc->phone_state = STATE_OFFLINE; */
 	if (mc->phone_state == STATE_OFFLINE)

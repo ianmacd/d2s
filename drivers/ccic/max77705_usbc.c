@@ -86,6 +86,8 @@ static enum ccic_sysfs_property max77705_sysfs_properties[] = {
 	CCIC_SYSFS_PROP_CC_PIN_STATUS,
 	CCIC_SYSFS_PROP_RAM_TEST,
 	CCIC_SYSFS_PROP_SBU_ADC,
+	CCIC_SYSFS_PROP_VSAFE0V_STATUS,
+	CCIC_SYSFS_PROP_MAX_COUNT,
 };
 #endif /* CONFIG_CCIC_NOTIFIER */
 #if defined(CONFIG_DUAL_ROLE_USB_INTF)
@@ -613,8 +615,6 @@ static int max77705_dr_set(const struct typec_capability *cap, enum typec_data_r
 {
 	struct max77705_usbc_platform_data *usbpd_data = container_of(cap, struct max77705_usbc_platform_data, typec_cap);
 
-	if (!usbpd_data)
-		return -EINVAL;
 	msg_maxim("typec_power_role=%d, typec_data_role=%d, role=%d",
 		usbpd_data->typec_power_role, usbpd_data->typec_data_role, role);
 	
@@ -649,8 +649,6 @@ static int max77705_dr_set(const struct typec_capability *cap, enum typec_data_r
 static int max77705_pr_set(const struct typec_capability *cap, enum typec_role role)
 {
 	struct max77705_usbc_platform_data *usbpd_data = container_of(cap, struct max77705_usbc_platform_data, typec_cap);
-	if (!usbpd_data)
-		return -EINVAL;
 
 	msg_maxim("typec_power_role=%d, typec_data_role=%d, role=%d",
 		usbpd_data->typec_power_role, usbpd_data->typec_data_role, role);
@@ -688,8 +686,6 @@ static int max77705_port_type_set(const struct typec_capability *cap, enum typec
 {
 	struct max77705_usbc_platform_data *usbpd_data = container_of(cap, struct max77705_usbc_platform_data, typec_cap);
 
-	if (!usbpd_data)
-		return -EINVAL;
 	msg_maxim("typec_power_role=%d, typec_data_role=%d, port_type=%d",
 		usbpd_data->typec_power_role, usbpd_data->typec_data_role, port_type);
 
@@ -977,6 +973,18 @@ void max77705_firmware_update_ums(struct max77705_usbc_platform_data *usbpd_data
 	usbpd_data->fw_update = 0;
 }
 
+int max77705_request_vsafe0v_read(struct max77705_usbc_platform_data *usbpd_data)
+{
+	u8  cc_status1 = 0;
+	int vsafe0v = 0;
+
+	max77705_read_reg(usbpd_data->muic, REG_CC_STATUS1, &cc_status1);
+	
+	vsafe0v = (cc_status1 & BIT_VSAFE0V) >> FFS(BIT_VSAFE0V);
+	pr_info("%s: ccstatus1: 0x%x  %d \n", __func__, cc_status1, vsafe0v);
+	return vsafe0v;
+}
+
 #if defined(CONFIG_CCIC_NOTIFIER)
 static int max77705_sysfs_get_local_prop(struct _ccic_data_t *pccic_data,
 					enum ccic_sysfs_property prop,
@@ -1119,9 +1127,15 @@ static int max77705_sysfs_get_local_prop(struct _ccic_data_t *pccic_data,
 		i = wait_for_completion_timeout(&usbpd_data->ccic_sysfs_completion, msecs_to_jiffies(1000 * 5));
 		if (i == 0)
 			msg_maxim("CCIC SYSFS COMPLETION TIMEOUT");
-		msg_maxim("usb: CCIC_SYSFS_PROP_SBU_ADC : %d %d timeout : %d", usbpd_data->sbu[0], usbpd_data->sbu[1], i);
-		retval = sprintf(buf, "%d %d\n", usbpd_data->sbu[0],
-				 usbpd_data->sbu[1]);
+		msg_maxim("usb: CCIC_SYSFS_PROP_SBU_ADC : %d %d timeout : %d",
+				usbpd_data->sbu[0], usbpd_data->sbu[1], i);
+		retval = sprintf(buf, "%d %d\n", usbpd_data->sbu[0], usbpd_data->sbu[1]);
+		break;
+	case CCIC_SYSFS_PROP_VSAFE0V_STATUS:
+		usbpd_data->vsafe0v_status = max77705_request_vsafe0v_read(usbpd_data);
+		retval = sprintf(buf, "%d\n", usbpd_data->vsafe0v_status);
+		msg_maxim("usb: CCIC_SYSFS_PROP_VSAFE0V_STATUS : %d",
+				usbpd_data->vsafe0v_status);
 		break;
 	default:
 		msg_maxim("prop read not supported prop (%d)", prop);
@@ -2415,6 +2429,18 @@ void max77705_usbc_check_sysmsg(struct max77705_usbc_platform_data *usbc_data, u
 		store_usblog_notify(NOTIFY_EXTRA, (void *)&event, NULL);
 #endif
 		break;
+	case SYSMSG_PD_CCx_5V_SHORT:
+		msg_maxim("PD_CC-VBUS SHORT");
+		usbc_data->pd_data->cc_sbu_short = true;
+		break;
+	case SYSMSG_PD_SBUx_5V_SHORT:
+		msg_maxim("PD_SBU-VBUS SHORT");
+		usbc_data->pd_data->cc_sbu_short = true;
+		break;
+	case SYSMSG_PD_SHORT_NONE:
+		msg_maxim("Cable detach");
+		usbc_data->pd_data->cc_sbu_short = false;
+		break;
 	case SYSERROR_DROP5V_SRCRDY:
 		msg_maxim("vbus drop during source ready");
 		break;
@@ -2444,8 +2470,28 @@ void max77705_usbc_check_sysmsg(struct max77705_usbc_platform_data *usbc_data, u
 		factory_execute_monitor(FAC_ABNORMAL_REPEAT_RID0);
 		break;
 #endif
-	case SYSMSG_CURRENT_CABLE:
-		msg_maxim("SYSMSG : current cable connected\n");
+	case SYSERROR_CCRP_HIGH:
+		msg_maxim("CCRP HIGH");
+#if defined(CONFIG_CCIC_NOTIFIER)
+		if (usbc_data->ccrp_state != 1) {
+			usbc_data->ccrp_state = 1;
+			max77705_ccic_event_work(usbc_data,
+				CCIC_NOTIFY_DEV_BATTERY, CCIC_NOTIFY_ID_WATER_CABLE,
+				CCIC_NOTIFY_ATTACH, 0/*rprd*/, 0);
+		}
+#endif
+		break;
+	case SYSERROR_CCRP_LOW:
+		msg_maxim("CCRP LOW");
+#if defined(CONFIG_CCIC_NOTIFIER)
+		if (usbc_data->ccrp_state != 0) {
+			usbc_data->ccrp_state = 0;
+			max77705_ccic_event_work(usbc_data,
+				CCIC_NOTIFY_DEV_BATTERY, CCIC_NOTIFY_ID_WATER_CABLE,
+				CCIC_NOTIFY_DETACH, 0/*rprd*/, 0);
+		}
+#endif
+		break;
 	default:
 		break;
 	}
@@ -3046,6 +3092,7 @@ static int max77705_usbc_probe(struct platform_device *pdev)
 	usbc_data->auto_vbus_en = false;
 	usbc_data->is_first_booting = 1;
 	usbc_data->pd_support = false;
+	usbc_data->ccrp_state = 0;
 	usbc_data->set_altmode = 0;
 	usbc_data->set_altmode_error = 0;
 #if defined(CONFIG_USB_HOST_NOTIFY)

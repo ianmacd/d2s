@@ -51,7 +51,7 @@ int isl91128_probe(struct i2c_client *client,
 	}
 
 	fimc_is_i2c_pin_config(client, I2C_PIN_STATE_ON);
-	ret = fimc_is_sensor_addr8_write8(client, 0x01, 0x20);
+	ret = fimc_is_sensor_addr8_write8(client, 0x01, 0x30);
 	if (ret < 0) {
 		probe_err("i2c write fail %d", ret);
 		goto probe_defer;

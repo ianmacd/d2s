@@ -32,7 +32,6 @@
 #include "exynos9820-camera.dtsi"
 #include <dt-bindings/soc/samsung/exynos-emc.h>
 #include "exynos9820-pmucal-dbg.dtsi"
-#include "exynos9820-beyond2lte_svcled.dtsi"
 #include "exynos9820-mfc.dtsi"
 #include "exynos9820-inputbooster.dtsi"
 
@@ -6310,6 +6309,20 @@
 		/* dma-mode; */
 		dmas = <&pdma0 28>;
 		dma-names = "tx";
+	};
+
+	ppmpu {
+		compatible = "samsung,exynos-ppmpu";
+		channel = <4>;
+		irqcnt = <8>;
+		interrupts = <0 INTREQ__DMC_PPMPINT_R_MIF0 0>,	/* PPMPU0_R */
+			     <0 INTREQ__DMC_PPMPINT_W_MIF0 0>,	/* PPMPU0_W */
+			     <0 INTREQ__DMC_PPMPINT_R_MIF1 0>,	/* PPMPU1_R */
+			     <0 INTREQ__DMC_PPMPINT_W_MIF1 0>,	/* PPMPU1_W */
+			     <0 INTREQ__DMC_PPMPINT_R_MIF2 0>,	/* PPMPU2_R */
+			     <0 INTREQ__DMC_PPMPINT_W_MIF2 0>,	/* PPMPU2_W */
+			     <0 INTREQ__DMC_PPMPINT_R_MIF3 0>,	/* PPMPU3_R */
+			     <0 INTREQ__DMC_PPMPINT_W_MIF3 0>;	/* PPMPU3_W */
 	};
 
 	/* TEEGRIS */

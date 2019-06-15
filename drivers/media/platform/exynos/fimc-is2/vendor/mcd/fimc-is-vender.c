@@ -189,6 +189,12 @@ void fimc_is_sec_get_hw_param(struct cam_hw_param **hw_param, u32 position)
 	case SENSOR_POSITION_SECURE:
 		*hw_param = &cam_hwparam_collector.iris_hwparam;
 		break;
+	case SENSOR_POSITION_REAR_TOF:
+		*hw_param = &cam_hwparam_collector.rear_tof_hwparam;
+		break;
+	case SENSOR_POSITION_FRONT_TOF:
+		*hw_param = &cam_hwparam_collector.front_tof_hwparam;
+		break;
 	default:
 		need_update_to_file = false;
 		return;
@@ -473,35 +479,9 @@ void fimc_is_vender_csi_err_handler(struct fimc_is_device_csi *csi)
 					hw_param->mipi_comp_err_cnt++;
 				break;
 #endif
-
-#ifdef CSI_SCENARIO_SEN_REAR
-			case CSI_SCENARIO_SEN_REAR:
-				if (hw_param)
-					hw_param->mipi_sensor_err_cnt++;
-				break;
-#endif
-
-#ifdef CSI_SCENARIO_SEN_FRONT
-			case CSI_SCENARIO_SEN_FRONT:
-				if (hw_param)
-					hw_param->mipi_sensor_err_cnt++;
-				break;
-#endif
-
-#ifdef CSI_SCENARIO_TELE
-			case CSI_SCENARIO_TELE:
-				if (hw_param)
-					hw_param->mipi_sensor_err_cnt++;
-				break;
-#endif
-
-#ifdef CSI_SCENARIO_SECURE
-			case CSI_SCENARIO_SECURE:
-				if (hw_param)
-					hw_param->mipi_sensor_err_cnt++;
-				break;
-#endif
 			default:
+				if (hw_param)
+					hw_param->mipi_sensor_err_cnt++;
 				break;
 		}
 		mipi_err_check = true;
@@ -758,6 +738,8 @@ int fimc_is_vendor_rom_parse_dt(struct device_node *dnode, int rom_id)
 	const u32 *dual_crc_check_list_spec;
 	const u32 *rom_dualcal_slave0_tilt_list_spec;
 	const u32 *rom_dualcal_slave1_tilt_list_spec;
+	const u32 *rom_dualcal_slave2_tilt_list_spec; /* wide(rear) - tof */
+	const u32 *rom_dualcal_slave3_tilt_list_spec; /* ultra wide(rear2) - tof */
 	const u32 *rom_ois_list_spec;
 	const char *node_string;
 	int ret = 0;
@@ -904,6 +886,44 @@ int fimc_is_vendor_rom_parse_dt(struct device_node *dnode, int rom_id)
 #endif
 	}
 
+	rom_dualcal_slave2_tilt_list_spec
+		= of_get_property(dnode, "rom_dualcal_slave2_tilt_list", &finfo->rom_dualcal_slave2_tilt_list_len);
+	if (rom_dualcal_slave2_tilt_list_spec) {
+		finfo->rom_dualcal_slave2_tilt_list_len /= (unsigned int)sizeof(*rom_dualcal_slave2_tilt_list_spec);
+
+		ret = of_property_read_u32_array(dnode, "rom_dualcal_slave2_tilt_list",
+			finfo->rom_dualcal_slave2_tilt_list, finfo->rom_dualcal_slave2_tilt_list_len);
+		if (ret)
+			info("rom_dualcal_slave2_tilt_list read is fail(%d)", ret);
+#ifdef FIMC_IS_DEVICE_ROM_DEBUG
+		else {
+			info("rom_dualcal_slave2_tilt_list :");
+			for (i = 0; i < finfo->rom_dualcal_slave2_tilt_list_len; i++)
+				info(" %d ", finfo->rom_dualcal_slave2_tilt_list[i]);
+			info("\n");
+		}
+#endif
+	}
+
+	rom_dualcal_slave3_tilt_list_spec
+		= of_get_property(dnode, "rom_dualcal_slave3_tilt_list", &finfo->rom_dualcal_slave3_tilt_list_len);
+	if (rom_dualcal_slave3_tilt_list_spec) {
+		finfo->rom_dualcal_slave3_tilt_list_len /= (unsigned int)sizeof(*rom_dualcal_slave3_tilt_list_spec);
+
+		ret = of_property_read_u32_array(dnode, "rom_dualcal_slave3_tilt_list",
+			finfo->rom_dualcal_slave3_tilt_list, finfo->rom_dualcal_slave3_tilt_list_len);
+		if (ret)
+			info("rom_dualcal_slave3_tilt_list read is fail(%d)", ret);
+#ifdef FIMC_IS_DEVICE_ROM_DEBUG
+		else {
+			info("rom_dualcal_slave3_tilt_list :");
+			for (i = 0; i < finfo->rom_dualcal_slave3_tilt_list_len; i++)
+				info(" %d ", finfo->rom_dualcal_slave3_tilt_list[i]);
+			info("\n");
+		}
+#endif
+	}
+
 	rom_ois_list_spec = of_get_property(dnode, "rom_ois_list", &finfo->rom_ois_list_len);
 	if (rom_ois_list_spec) {
 		finfo->rom_ois_list_len /= (unsigned int)sizeof(*rom_ois_list_spec);
@@ -951,10 +971,13 @@ int fimc_is_vendor_rom_parse_dt(struct device_node *dnode, int rom_id)
 	DT_READ_U32_DEFAULT(dnode, "rom_dualcal_slave0_size", finfo->rom_dualcal_slave0_size, -1);
 	DT_READ_U32_DEFAULT(dnode, "rom_dualcal_slave1_start_addr", finfo->rom_dualcal_slave1_start_addr, -1);
 	DT_READ_U32_DEFAULT(dnode, "rom_dualcal_slave1_size", finfo->rom_dualcal_slave1_size, -1);
+	DT_READ_U32_DEFAULT(dnode, "rom_dualcal_slave2_start_addr", finfo->rom_dualcal_slave2_start_addr, -1);
+	DT_READ_U32_DEFAULT(dnode, "rom_dualcal_slave2_size", finfo->rom_dualcal_slave2_size, -1);
 
 	DT_READ_U32_DEFAULT(dnode, "rom_tof_cal_size_addr", finfo->rom_tof_cal_size_addr, -1);
 	DT_READ_U32_DEFAULT(dnode, "rom_tof_cal_start_addr", finfo->rom_tof_cal_start_addr, -1);
 	DT_READ_U32_DEFAULT(dnode, "rom_tof_cal_uid_addr", finfo->rom_tof_cal_uid_addr, -1);
+	DT_READ_U32_DEFAULT(dnode, "rom_tof_cal_result_addr", finfo->rom_tof_cal_result_addr, -1);
 
 	return 0;
 }

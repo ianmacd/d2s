@@ -33,7 +33,7 @@
 __asm__ (
   ".section .init.data,\"aw\"\n"
   "tzdev_tzar_begin:\n"
-  ".incbin \"" KBUILD_SRC "/drivers/misc/tzdev/startup.tzar\"\n"
+  ".incbin \"" KBUILD_SRC "/drivers/misc/tzdev/" TZAR_FILE_NAME "\"\n"
   "tzdev_tzar_end:\n"
   ".previous\n"
 );

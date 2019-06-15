@@ -1735,6 +1735,7 @@ int fimc_is_sensor_open(struct fimc_is_device_sensor *device,
 	device->frame_duration = 0;
 	device->force_stop = 0;
 	device->early_buf_done_mode = 0;
+	device->ex_scenario = 0;
 	memset(&device->sensor_ctl, 0, sizeof(struct camera2_sensor_ctl));
 	memset(&device->lens_ctl, 0, sizeof(struct camera2_lens_ctl));
 	memset(&device->flash_ctl, 0, sizeof(struct camera2_flash_ctl));
@@ -3163,7 +3164,7 @@ static int fimc_is_sensor_back_start(void *qdevice,
 	}
 
 	ret = fimc_is_secure_func(core, device, FIMC_IS_SECURE_CAMERA_FACE,
-		core->scenario, SMC_SECCAM_PREPARE);
+		device->ex_scenario, SMC_SECCAM_PREPARE);
 	if (ret)
 		goto p_err;
 #endif
@@ -3187,7 +3188,7 @@ p_err:
 #if defined(SECURE_CAMERA_FACE)
 	if (ret)
 		ret = fimc_is_secure_func(core, NULL, FIMC_IS_SECURE_CAMERA_FACE,
-		core->scenario, SMC_SECCAM_UNPREPARE);
+			device->ex_scenario, SMC_SECCAM_UNPREPARE);
 #endif
 	minfo("[SEN:D] %s(%dx%d, %d)\n", device, __func__,
 		device->image.window.width, device->image.window.height, ret);

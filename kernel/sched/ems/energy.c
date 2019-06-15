@@ -43,6 +43,19 @@ struct energy_table {
 };
 DEFINE_PER_CPU(struct energy_table, energy_table);
 
+/* check the status of energy table */
+bool energy_initialized;
+
+void set_energy_table_status(bool status)
+{
+	energy_initialized = status;
+}
+
+bool get_energy_table_status(void)
+{
+	return energy_initialized;
+}
+
 inline unsigned int get_cpu_mips(unsigned int cpu, int sse)
 {
 	return sse ? per_cpu(energy_table, cpu).mips_s :
@@ -87,6 +100,9 @@ unsigned int calculate_energy(struct task_struct *p, int target_cpu)
 	unsigned long util[NR_CPUS] = {0, };
 	unsigned int total_energy = 0;
 	int cpu;
+
+	if (!get_energy_table_status())
+		return UINT_MAX;
 
 	/*
 	 * 0. Calculate utilization of the entire active cpu when task

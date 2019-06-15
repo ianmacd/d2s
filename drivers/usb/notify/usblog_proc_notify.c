@@ -238,6 +238,8 @@ static const char *ccic_id_string(enum ccic_id id)
 		return "ID_FAC";
 	case NOTIFY_ID_CC_PIN_STATUS:
 		return "ID_PIN_STATUS";
+	case NOTIFY_ID_WATER_CABLE:
+		return "ID_WATER_CABLE";
 	default:
 		return "UNDEFINED";
 	}
@@ -531,6 +533,13 @@ static void print_ccic_event(struct seq_file *m, unsigned long long ts,
 			ccic_dev_string(type.src),
 			ccic_dev_string(type.dest),
 			ccic_pinstatus_string(type.sub1));
+		else if (type.id == NOTIFY_ID_WATER_CABLE)
+			seq_printf(m, "[%5lu.%06lu] ccic notify:	id=%s src=%s dest=%s %s\n",
+			(unsigned long)ts, rem_nsec / 1000,
+			ccic_id_string(type.id),
+			ccic_dev_string(type.src),
+			ccic_dev_string(type.dest),
+			ccic_con_string(type.sub1));
 		else
 			seq_printf(m, "[%5lu.%06lu] ccic notify:    id=%s src=%s dest=%s rprd=%s %s\n",
 			(unsigned long)ts, rem_nsec / 1000,

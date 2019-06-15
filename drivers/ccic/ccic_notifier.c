@@ -56,6 +56,7 @@ char CCIC_NOTI_ID_Print[CCIC_NOTI_ID_NUM][20] = {
     {"ID_ROLE_SWAP"},
     {"ID_FAC"},
     {"ID_PIN_STATUS"},
+    {"ID_WATER_CABLE"},
 };
 
 char CCIC_NOTI_RID_Print[CCIC_NOTI_RID_NUM][15] = {

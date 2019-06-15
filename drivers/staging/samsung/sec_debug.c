@@ -31,9 +31,6 @@
 #include <linux/of_reserved_mem.h>
 #include <linux/memblock.h>
 #include <linux/sched/task.h>
-#include <linux/percpu-rwsem.h>
-#include <linux/cgroup-defs.h>
-#include <linux/sched/clock.h>
 
 #include <asm/cacheflush.h>
 #include <asm/stacktrace.h>
@@ -230,7 +227,7 @@ static void sec_debug_set_upload_magic(unsigned magic, char *str)
 
 static void sec_debug_set_upload_cause(enum sec_debug_upload_cause_t type)
 {
-	exynos_pmu_write(EXYNOS_PMU_INFORM3, type);
+	exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, type);
 
 	pr_emerg("sec_debug: set upload cause (0x%x)\n", type);
 }
@@ -651,67 +648,13 @@ int sec_debug_sdcard_ramdump(const char *val, const struct kernel_param *kp)
 	pr_crit("%s: %s %x\n", __func__, val, num);
 
 	if (num == ENABLE_SDCARD_RAMDUMP)
-		sec_set_reboot_magic(MAGIC_SDR_FOR_INFORM2, OFFSET_SDR_FOR_INFORM2, MASK_SDR_FOR_INFORM2);
+		sec_set_reboot_magic(MAGIC_SDR_FOR_MINFORM, OFFSET_SDR_FOR_MINFORM, MASK_SDR_FOR_MINFORM);
 
 	return 0;
 }
 EXPORT_SYMBOL(sec_debug_sdcard_ramdump);
 
 module_param_call(dump_sink, sec_debug_sdcard_ramdump, NULL, NULL, 0600);
-
-#ifdef CONFIG_SEC_DEBUG_PCPRWSEM
-bool sec_debug_pcprwsem_enabled;
-
-void sec_debug_pcprwsem_log_enable(bool en)
-{
-	pr_info("%s: %s\n", __func__, en ? "true" : "false");
-	sec_debug_pcprwsem_enabled = en;
-}
-
-void __sec_debug_pcprwsem_log_print(const char *s, int mode, void *sem)
-{
-	struct percpu_rw_semaphore *rs = (struct percpu_rw_semaphore *)sem;
-	int cpu;	
-	int rc[NR_CPUS] = {0, };
-
-	if (rs != &cgroup_threadgroup_rwsem)
-		return;
-
-	for_each_possible_cpu(cpu)					\
-		rc[cpu] = *per_cpu_ptr(rs->read_count, cpu);				\
-	
-	dbg_snapshot_printk("%s(%d) [%s: %d(%p)] (rc:%d/%d/%d/%d/%d/%d/%d/%d,rb:%d,wr:%p)",
-			s, mode, current->comm, current->pid, current,
-			rc[0], rc[1], rc[2], rc[3], rc[4], rc[5], rc[6], rc[7],
-			rs->readers_block,
-			rs->writer);
-}
-#endif /* CONFIG_SEC_DEBUG_PCPRWSEM */
-
-#define NUM_CALLSTACK	1
-
-static struct __rwsem_log {
-	unsigned long long time;
-	int cpu;
-	size_t msg;
-	size_t val;
-	void *caller[NUM_CALLSTACK];
-} sec_debug_printkl_buf[SZ_128];
-
-static atomic_t sec_debug_printkl_idx = ATOMIC_INIT(0);
-
-void sec_debug_snapshot_printkl(size_t msg, size_t val)
-{
-	int cpu = raw_smp_processor_id();
-	unsigned long i = atomic_inc_return(&sec_debug_printkl_idx) &
-			(ARRAY_SIZE(sec_debug_printkl_buf) - 1);
-
-	sec_debug_printkl_buf[i].time = cpu_clock(cpu);
-	sec_debug_printkl_buf[i].cpu = cpu;
-	sec_debug_printkl_buf[i].msg = msg;
-	sec_debug_printkl_buf[i].val = val;
-	sec_debug_printkl_buf[i].caller[0] = (void *)_RET_IP_;
-}
 
 static struct sec_debug_next *sdn;
 static unsigned long sec_debug_next_phys;

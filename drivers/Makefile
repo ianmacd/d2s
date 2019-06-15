@@ -66,6 +66,9 @@ obj-y				+= gpu/
 
 obj-$(CONFIG_CONNECTOR)		+= connector/
 
+# mcps module.
+obj-$(CONFIG_MCPS)		+= mcps/
+
 # i810fb and intelfb depend on char/agp/
 obj-$(CONFIG_FB_I810)           += video/fbdev/i810/
 obj-$(CONFIG_FB_INTEL)          += video/fbdev/intelfb/
@@ -214,10 +217,11 @@ obj-$(CONFIG_SENSORS_FINGERPRINT)       += fingerprint/
 # Sensorhub driver
 obj-$(CONFIG_SENSORS_SSP)	+= sensorhub/
 
-# HRM sensor driver
+# optics sensor driver
 obj-$(CONFIG_SENSORS_HRMSENSOR)	+= optics/
 obj-$(CONFIG_SENSORS_MAX86915)	+= optics/
 obj-$(CONFIG_SENSORS_TCS3407)	+= optics/
+obj-$(CONFIG_SENSORS_VD6281)	+= optics/
 
 # Motor
 obj-y                           += motor/

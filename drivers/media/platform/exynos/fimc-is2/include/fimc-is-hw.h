@@ -414,4 +414,11 @@ void fimc_is_hw_cip_clk_enable(bool enable);
 void fimc_is_hw_c2sync_ring_clock(enum c2sync_type type, bool enable);
 #endif
 
+#ifdef CONFIG_CAMERA_MC_SCALER_VER2_USE
+void fimc_is_hw_djag_get_input(struct fimc_is_device_ischain *ischain, u32 *djag_in);
+void fimc_is_hw_djag_adjust_out_size(struct fimc_is_device_ischain *ischain,
+					u32 in_width, u32 in_height,
+					u32 *out_width, u32 *out_height);
+#endif
+
 #endif

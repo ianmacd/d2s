@@ -27,8 +27,8 @@
 #include "fimc-is-vendor-config_beyond2.h"
 #elif defined(CONFIG_CAMERA_BEYONDX)
 #include "fimc-is-vendor-config_beyondx.h"
-#elif defined(CONFIG_CAMERA_DAVINCI5G)
-#include "fimc-is-vendor-config_davinci5g.h"
+#elif defined(CONFIG_CAMERA_DAVINCI)
+#include "fimc-is-vendor-config_davinci.h"
 #else
 #include "fimc-is-vendor-config_beyond2.h" /* Default */
 #endif

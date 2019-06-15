@@ -136,12 +136,12 @@ config CAMERA_BEYONDX
         default n
         help
           This camera is beyondx project.
-config CAMERA_DAVINCI5G
-        bool "This camera is davinci5g project"
+config CAMERA_DAVINCI
+        bool "This camera is davinci project"
         depends on VENDER_MCD
         default n
         help
-          This camera is davinci5g project.
+          This camera is davinci project.
 config OIS_USE_RUMBA_S6
         bool "Use RUMBA S6 ois driver IC"
         depends on OIS_USE

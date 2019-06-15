@@ -272,9 +272,6 @@ void displayport_reg_phy_mode_setting(void)
 	u32 lane_en_val = 0;
 
 #if defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
-#if defined(CONFIG_PHY_SAMSUNG_USB_CAL)
-	dwc3_exynos_phy_enable(1, 1);
-#endif
 	switch (displayport->ccic_notify_dp_conf) {
 	case CCIC_NOTIFY_DP_PIN_UNKNOWN:
 		displayport_dbg("CCIC_NOTIFY_DP_PIN_UNKNOWN\n");
@@ -1435,6 +1432,9 @@ void displayport_reg_sw_function_en(u32 en)
 
 void displayport_reg_phy_init(void)
 {
+#if defined(CONFIG_PHY_SAMSUNG_USB_CAL)
+	dwc3_exynos_phy_enable(1, 1);
+#endif
 	displayport_reg_phy_reset(1);
 	displayport_reg_phy_init_setting();
 	displayport_reg_phy_mode_setting();

@@ -429,11 +429,11 @@ static void ologk_workqueue_func(struct work_struct *work)
 {
 	t_ologk_work *workqueue = (t_ologk_work *)work;
 
-	mutex_lock(&buffer.mutex);
-	WriteBuffer(&buffer, workqueue->writelogpacket.stream, PERFLOG_HEADER_SIZE + workqueue->writelogpacket.itemes.context_length);
-	mutex_unlock(&buffer.mutex);
-
 	if(work) {
+		mutex_lock(&buffer.mutex);
+		WriteBuffer(&buffer, workqueue->writelogpacket.stream, PERFLOG_HEADER_SIZE + workqueue->writelogpacket.itemes.context_length);
+		mutex_unlock(&buffer.mutex);
+
 		kfree((void *)work);
 	}
 }

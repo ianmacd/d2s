@@ -991,6 +991,13 @@ config ARM64_VHE
 	  at runtime, and does not affect processors that do not
 	  implement this feature.
 
+config SEC_ARM64_LSE_SPINLOCK
+	bool "Use LSE atomics for spinlock"
+	default y
+	help
+	  Say Y here to make use of LSE instructions for spinlocks regardless
+	  of config ARM64_LSE_ATOMICS.
+
 endmenu
 
 menu "ARMv8.2 architectural features"
@@ -1225,12 +1232,12 @@ config UH_RKP
 	  it protects a kernel text and etc.
 
 config RKP_KDP
-	bool "Protection for cred structure"
+	bool "Protection for credential structure"
 	depends on !SEC_VTS_TEST
 	depends on UH_RKP
 	default n
 	help
-	  Prevents unauthorized cred modification.
+	  Prevents unauthorized credential modification.
 
 config RKP_NS_PROT
 	bool "Protection for namespace structure"

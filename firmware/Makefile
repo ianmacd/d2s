@@ -14,9 +14,12 @@ fw-external-y := $(subst $(quote),,$(CONFIG_EXTRA_FIRMWARE))
 
 fw-external-$(CONFIG_EXYNOS9810_ACPM) += exynos9810_acpm_tmu.fw
 fw-shipped-$(CONFIG_TOUCHSCREEN_SEC_TS_Y771) += tsp_sec/y761_beyond0_phole.bin tsp_sec/y771_beyond1_phole.bin \
-						tsp_sec/y771_beyond2_phole.bin tsp_sec/y771_beyondx_phole.bin
+						tsp_sec/y771_beyond2_phole.bin tsp_sec/y771_beyondx_phole.bin \
+						tsp_sec/y771_davinci_bringup.bin
 
 fw-shipped-$(CONFIG_EPEN_WACOM_W9020) += epen/w9020_davinci.fw
+
+fw-shipped-$(CONFIG_KEYBOARD_STM_FSR) += key_stm/fsr1ad04_davinci.fw
 
 #ifdef CONFIG_SEC_FACTORY
 #fw-shipped-$(CONFIG_EPEN_WACOM_W9020) += epen/w9018_crown_garage.fw epen/w9018_crown_unit.fw

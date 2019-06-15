@@ -96,6 +96,11 @@ extern int lb_check_priority(int src_cpu, int dst_cpu);
 extern struct list_head *lb_prefer_cfs_tasks(int src_cpu, int dst_cpu);
 extern int lb_need_active_balance(enum cpu_idle_type idle,
 				struct sched_domain *sd, int src_cpu, int dst_cpu);
+
+/* check the status of energy table */
+extern bool energy_initialized;
+extern void set_energy_table_status(bool status);
+extern bool get_energy_table_status(void);
 #else
 static inline void init_ems(void);
 static inline void exynos_init_entity_util_avg(struct sched_entity *se) { }
@@ -161,6 +166,11 @@ static inline int lb_need_active_balance(enum cpu_idle_type idle,
 				struct sched_domain *sd, int src_cpu, int dst_cpu)
 {
 	return 0;
+}
+static inline void set_energy_table_status(bool status) { }
+static inline bool get_energy_table_status(void)
+{
+	return false;
 }
 #endif /* CONFIG_SCHED_EMS */
 

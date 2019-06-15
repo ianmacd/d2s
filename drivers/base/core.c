@@ -31,6 +31,7 @@
 #include <linux/platform_device.h>
 #include <linux/sched/clock.h>
 #include <linux/i2c.h>
+#include <linux/sec_debug.h>
 
 #include "base.h"
 #include "power/power.h"

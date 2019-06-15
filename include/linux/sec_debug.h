@@ -18,6 +18,7 @@
 #include <linux/reboot.h>
 #include <linux/irq.h>
 #include <linux/irqdesc.h>
+#include <linux/sec_ext.h>
 
 #define SEC_DEBUG_MAGIC_PA memblock_start_of_DRAM()
 #define SEC_DEBUG_MAGIC_VA phys_to_virt(SEC_DEBUG_MAGIC_PA)
@@ -28,6 +29,9 @@
 /*
  * SEC DEBUG
  */
+#define SEC_DEBUG_MAGIC_INFORM		(EXYNOS_PMU_INFORM2)
+#define SEC_DEBUG_PANIC_INFORM		(EXYNOS_PMU_INFORM3)
+
 #ifdef CONFIG_SEC_DEBUG
 extern int id_get_asb_ver(void);
 extern int id_get_product_line(void);
@@ -340,9 +344,9 @@ extern unsigned long sec_debug_get_buf_base(int type);
 extern unsigned long sec_debug_get_buf_size(int type);
 
 #define ENABLE_SDCARD_RAMDUMP		(0x73646364)
-#define MAGIC_SDR_FOR_INFORM2		(0x3)
-#define OFFSET_SDR_FOR_INFORM2		(0x0)
-#define MASK_SDR_FOR_INFORM2		(0xF)
+#define MAGIC_SDR_FOR_MINFORM		(0x3)
+#define OFFSET_SDR_FOR_MINFORM		(0x0)
+#define MASK_SDR_FOR_MINFORM		(0xF)
 
 extern void sec_set_reboot_magic(int magic, int offset, int mask);
 
@@ -453,7 +457,6 @@ extern void sec_debug_set_extra_info_bug(const char *file, unsigned int line);
 extern void sec_debug_set_extra_info_panic(char *str);
 extern void sec_debug_set_extra_info_backtrace(struct pt_regs *regs);
 extern void sec_debug_set_extra_info_backtrace_cpu(struct pt_regs *regs, int cpu);
-extern void sec_debug_set_extra_info_backtrace_task(struct task_struct *tsk);
 extern void sec_debug_set_extra_info_evt_version(void);
 extern void sec_debug_set_extra_info_sysmmu(char *str);
 extern void sec_debug_set_extra_info_busmon(char *str);
@@ -468,7 +471,6 @@ extern void sec_debug_set_extra_info_ufs_error(char *str);
 extern void sec_debug_set_extra_info_zswap(char *str);
 extern void sec_debug_set_extra_info_mfc_error(char *str);
 extern void sec_debug_set_extra_info_aud(char *str);
-extern void sec_debug_set_extra_info_rvd1(char *tmp);
 
 #else
 
@@ -586,24 +588,6 @@ extern void register_set_auto_comm_buf(void (*func)(int type, const char *buf, s
 extern void register_set_auto_comm_lastfreq(void (*func)(int type,
 						int old_freq, int new_freq, u64 time, int en));
 #endif
-
-#ifdef CONFIG_SEC_DEBUG_PCPRWSEM
-extern bool sec_debug_pcprwsem_enabled;
-extern void sec_debug_pcprwsem_log_enable(bool en);
-extern void __sec_debug_pcprwsem_log_print(const char *s, int mode, void *sem);
-static inline void sec_debug_pcprwsem_log_print(const char *s, int mode, void *sem)
-{
-	if (likely(!sec_debug_pcprwsem_enabled))
-		return;
-
-	__sec_debug_pcprwsem_log_print(s, mode, sem);
-}
-#else
-#define sec_debug_pcprwsem_log_enable() do { } while (0)
-#define sec_debug_pcprwsem_log_print(a, b, c) do { } while (0)
-#endif
-
-extern void sec_debug_snapshot_printkl(size_t msg, size_t val);
 
 #ifdef CONFIG_SEC_DEBUG_INIT_LOG
 extern void register_init_log_hook_func(void (*func)(const char *buf, size_t size));

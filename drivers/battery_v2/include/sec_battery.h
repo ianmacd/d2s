@@ -58,32 +58,36 @@
 #include "sec_battery_misc.h"
 #endif
 
+extern char *sec_cable_type[];
+
 /* current event */
-#define SEC_BAT_CURRENT_EVENT_NONE					0x00000
-#define SEC_BAT_CURRENT_EVENT_AFC					0x00001
-#define SEC_BAT_CURRENT_EVENT_CHARGE_DISABLE		0x00002
-#define SEC_BAT_CURRENT_EVENT_SKIP_HEATING_CONTROL	0x00004
-#define SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING		0x00010
-#define SEC_BAT_CURRENT_EVENT_HIGH_TEMP_SWELLING	0x00020
+#define SEC_BAT_CURRENT_EVENT_NONE					0x000000
+#define SEC_BAT_CURRENT_EVENT_AFC					0x000001
+#define SEC_BAT_CURRENT_EVENT_CHARGE_DISABLE		0x000002
+#define SEC_BAT_CURRENT_EVENT_SKIP_HEATING_CONTROL	0x000004
+#define SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING		0x000010
+#define SEC_BAT_CURRENT_EVENT_HIGH_TEMP_SWELLING	0x000020
 #if defined(CONFIG_ENABLE_100MA_CHARGING_BEFORE_USB_CONFIGURED)
-#define SEC_BAT_CURRENT_EVENT_USB_100MA			0x00040
+#define SEC_BAT_CURRENT_EVENT_USB_100MA			0x000040
 #else
-#define SEC_BAT_CURRENT_EVENT_USB_100MA			0x00000
+#define SEC_BAT_CURRENT_EVENT_USB_100MA			0x000000
 #endif
-#define SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING_2ND			0x00080
-#define SEC_BAT_CURRENT_EVENT_SWELLING_MODE		(SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING | SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING_2ND | SEC_BAT_CURRENT_EVENT_HIGH_TEMP_SWELLING)
-#define SEC_BAT_CURRENT_EVENT_LOW_TEMP_MODE		(SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING | SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING_2ND)
-#define SEC_BAT_CURRENT_EVENT_USB_SUPER			0x00100
-#define SEC_BAT_CURRENT_EVENT_CHG_LIMIT			0x00200
-#define SEC_BAT_CURRENT_EVENT_CALL			0x00400
-#define SEC_BAT_CURRENT_EVENT_SLATE			0x00800
-#define SEC_BAT_CURRENT_EVENT_VBAT_OVP			0x01000
-#define SEC_BAT_CURRENT_EVENT_VSYS_OVP			0x02000
-#define SEC_BAT_CURRENT_EVENT_WPC_VOUT_LOCK		0x04000
-#define SEC_BAT_CURRENT_EVENT_AICL			0x08000
-#define SEC_BAT_CURRENT_EVENT_HV_DISABLE		0x10000
-#define SEC_BAT_CURRENT_EVENT_SELECT_PDO		0x20000
-#define SEC_BAT_CURRENT_EVENT_FG_RESET			0x40000
+#define SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING_2ND			0x000080
+#define SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING_3RD			0x000008
+#define SEC_BAT_CURRENT_EVENT_SWELLING_MODE		(SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING | SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING_2ND | SEC_BAT_CURRENT_EVENT_HIGH_TEMP_SWELLING | SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING_3RD)
+#define SEC_BAT_CURRENT_EVENT_LOW_TEMP_MODE		(SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING | SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING_2ND | SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING_3RD)
+#define SEC_BAT_CURRENT_EVENT_USB_SUPER			0x000100
+#define SEC_BAT_CURRENT_EVENT_CHG_LIMIT			0x000200
+#define SEC_BAT_CURRENT_EVENT_CALL			0x000400
+#define SEC_BAT_CURRENT_EVENT_SLATE			0x000800
+#define SEC_BAT_CURRENT_EVENT_VBAT_OVP			0x001000
+#define SEC_BAT_CURRENT_EVENT_VSYS_OVP			0x002000
+#define SEC_BAT_CURRENT_EVENT_WPC_VOUT_LOCK		0x004000
+#define SEC_BAT_CURRENT_EVENT_AICL			0x008000
+#define SEC_BAT_CURRENT_EVENT_HV_DISABLE		0x010000
+#define SEC_BAT_CURRENT_EVENT_SELECT_PDO		0x020000
+#define SEC_BAT_CURRENT_EVENT_FG_RESET			0x040000
+#define SEC_BAT_CURRENT_EVENT_DC_ERR			0x400000
 
 /* misc_event */
 #define BATT_MISC_EVENT_UNDEFINED_RANGE_TYPE	0x00000001
@@ -97,8 +101,6 @@
 #define BATT_MISC_EVENT_WIRELESS_AUTH_RECVED    0x00000400
 #define BATT_MISC_EVENT_WIRELESS_AUTH_FAIL      0x00000800
 #define BATT_MISC_EVENT_WIRELESS_AUTH_PASS      0x00001000
-#define BATT_MISC_EVENT_TEMP_HICCUP_TYPE	0x00002000
-
 
 #if defined(CONFIG_SEC_FACTORY)             // SEC_FACTORY
 #define STORE_MODE_CHARGING_MAX 80
@@ -143,6 +145,13 @@
 
 #define HV_CHARGER_STATUS_STANDARD1	12000 /* mW */
 #define HV_CHARGER_STATUS_STANDARD2	20000 /* mW */
+#define HV_CHARGER_STATUS_STANDARD3 24500 /* mW */
+enum {
+	NORMAL_TA,
+	AFC_9V_OR_15W,
+	AFC_12V_OR_20W,
+	SFC_25W,
+};
 
 #if defined(CONFIG_CCIC_NOTIFIER)
 struct sec_bat_pdic_info {
@@ -208,6 +217,7 @@ struct cable_info {
 #if defined(CONFIG_CCIC_NOTIFIER)
 	bool pdic_attach;
 	bool pdic_ps_rdy;
+	bool hv_pdo;
 
 	struct pdic_notifier_struct pdic_info;
 	struct sec_bat_pdic_list pd_list;
@@ -250,6 +260,7 @@ struct sec_battery_info {
 #if defined(CONFIG_CCIC_NOTIFIER)
 	bool pdic_attach;
 	bool pdic_ps_rdy;
+	bool hv_pdo;
 	struct pdic_notifier_struct pdic_info;
 	struct sec_bat_pdic_list pd_list;
 #endif
@@ -373,11 +384,6 @@ struct sec_battery_info {
 	int wpc_temp;
 	int coil_temp;
 	int slave_chg_temp;
-	int usb_temp_flag;
-#if defined(CONFIG_PREVENT_USB_CONN_OVERHEAT)
-	int usb_protection_temp;
-	int temp_gap_bat_usb;
-#endif
 #if defined(CONFIG_DIRECT_CHARGING)
 	int dchg_temp;
 #endif
@@ -518,6 +524,7 @@ struct sec_battery_info {
 #if defined(CONFIG_BATTERY_SWELLING)
 	unsigned int swelling_mode;
 	int swelling_full_check_cnt;
+	bool swelling_low_temp_3rd_ctrl;
 #endif
 #if defined(CONFIG_AFC_CHARGER_MODE)
 	char *hv_chg_name;
@@ -609,7 +616,7 @@ extern bool sleep_mode;
 extern void select_pdo(int num);
 #if defined(CONFIG_PDIC_PD30)
 extern int sec_pd_select_pps(int num, int ppsVol, int ppsCur);
-extern int sec_pd_get_apdo_max_current(unsigned int *pdo_pos, unsigned int taMaxVol, unsigned int *taMaxCur);
+extern int sec_pd_get_apdo_max_power(unsigned int *pdo_pos, unsigned int *taMaxVol, unsigned int *taMaxCur, unsigned int *taMaxPwr);
 #endif
 
 extern int adc_read(struct sec_battery_info *battery, int channel);

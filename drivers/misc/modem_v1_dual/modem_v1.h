@@ -272,7 +272,7 @@ enum iodev_attr_bit {
 	ATTR_NO_CHECK_MAXQ,     /* no need to check rxq overflow condition */
 	ATTR_DUALSIM,		/* support Dual SIM */
 	ATTR_OPTION_REGION,	/* region & operator info */
-	ATTR_ZEROCOPY,		/* suppoert Zerocopy : 0x1 << 12*/
+	ATTR_ZEROCOPY,		/* support Zerocopy : 0x1 << 12*/
 };
 #define IODEV_ATTR(b)	(0x1 << b)
 

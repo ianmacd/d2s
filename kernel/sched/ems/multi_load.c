@@ -273,6 +273,7 @@ static void update_next_balance(int cpu, struct multi_load *ml)
 {
 	struct sched_avg *sa = container_of(ml, struct sched_avg, ml);
 	struct sched_entity *se = container_of(sa, struct sched_entity, avg);
+
 	if (se->my_q)
 		return;
 

@@ -91,15 +91,7 @@ config SEC_DEBUG_INIT_LOG
 	help
 	  This option enables hooking of init task log. 
 	  It can be used for debugging purpose in case of booting failure or something else.
-
-config SEC_DEBUG_PCPRWSEM
-	bool "support logging percpu rwsemaphore"
-	depends on SEC_DEBUG
-	default y
-	help
-	  This option enables logging of read/write_lock/unlock of cgroup_threadgroup_rwsem.
-	  The log will be recorded only while system is shutting down.
-
+	  
 comment "Samsung ubsan debug feature"
 config SEC_DEBUG_UBSAN
 	bool "Enable ubsan debug feature"

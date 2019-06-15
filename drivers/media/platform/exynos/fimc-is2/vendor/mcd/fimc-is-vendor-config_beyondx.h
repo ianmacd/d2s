@@ -7,10 +7,10 @@
 #define VENDER_PATH
 
 #define CAMERA_REAR_DUAL_CAL
-#define CAMERA_FRONT_DUAL_CAL
 #define CAMERA_REAR2
 #define CAMERA_REAR2_AF /* related to OIS */
 #define CAMERA_REAR2_TILT
+#define CAMERA_REAR2_MODULEID
 #define CAMERA_REAR3
 #define CAMERA_REAR3_AFCAL
 #define CAMERA_REAR3_TILT
@@ -18,6 +18,11 @@
 #define CAMERA_FRONT_TOF
 #define CAMERA_FRONT_TOF_CAL
 #define CAMERA_REAR_TOF_CAL
+#define CAMERA_REAR4_TOF_MODULEID  	/* rear tof moduleid */
+#define CAMERA_FRONT2_TOF_MODULEID 	/* front tof moduleid */
+#define CAMERA_FRONT_TOF_TILT  	/* front - tof tilt */
+#define CAMERA_REAR_TOF_TILT	/* wide - tof */
+#define CAMERA_REAR2_TOF_TILT	/* ultrawide - tof tilt */
 
 #define CAMERA_USE_OIS_VDD_1_8V
 
@@ -40,6 +45,7 @@
 
 #define USE_CAMERA_MIPI_CLOCK_VARIATION
 #ifdef USE_CAMERA_MIPI_CLOCK_VARIATION
+#define USE_CAMERA_FRONT_TOF_TX_FREQ_VARIATION
 /*#define USE_CAMERA_MIPI_CLOCK_VARIATION_RUNTIME*/
 #endif
 
@@ -95,5 +101,8 @@
 #endif
 
 #define USE_BUCK2_REGULATOR_CONTROL
+
+#define USE_TOF_IO_DENOISE_REAR_CAMERA_IO
+#define USE_TOF_IO_DENOISE_FRONT_CAMERA_IO
 
 #endif /* FIMC_IS_VENDOR_CONFIG_BEYOND2_H */

@@ -86,12 +86,12 @@ int init_wsm(struct device *dev)
 static int srpmb_scsi_ioctl_helper(struct scsi_device *sdev, Rpmb_Req *req)
 {
 	int ret;
-	unsigned int cnt = 0;
+    unsigned int cnt = 0;
 
-	do {
-		ret = srpmb_scsi_ioctl(sdev, req);
-	/* unit attention status. need to call again */
-	} while (ret == 0x08000002 && ++cnt < IOCTL_MAX_RETRY);
+    do {
+    	ret = srpmb_scsi_ioctl(sdev, req);
+    /* unit attention status. need to call again */
+    } while (ret == 0x08000002 && ++cnt < IOCTL_MAX_RETRY);
 
 	return ret;
 }
@@ -284,7 +284,6 @@ static struct sock_desc *scsi_srpmb_accept_swd_connection(struct device *dev)
 		dev_err(dev, "failed to create iwd socket, err = %ld\n", PTR_ERR(srpmb_listen));
 		return srpmb_listen;
 	}
-	dev_info(dev, "Created socket\n");
 
 	ret = tz_iwsock_listen(srpmb_listen, RPMB_SOCKET_NAME);
 	if (ret) {
@@ -292,14 +291,12 @@ static struct sock_desc *scsi_srpmb_accept_swd_connection(struct device *dev)
 		srpmb_conn = ERR_PTR(ret);
 		goto out;
 	}
-	dev_info(dev, "Make socket listening\n");
 
 	srpmb_conn = tz_iwsock_accept(srpmb_listen);
 	if (IS_ERR(srpmb_conn)) {
 		dev_err(dev, "failed to accept connection, err = %ld\n", PTR_ERR(srpmb_conn));
 		goto out;
 	}
-	dev_info(dev, "Accepted connection\n");
 
 out:
 	tz_iwsock_release(srpmb_listen);
@@ -323,8 +320,6 @@ static int scsi_srpmb_send_reply(struct sock_desc *srpmb_conn, struct device *de
 		ret = len >= 0 ? -EMSGSIZE : len;
 		dev_err(dev, "failed to send reply, err = %d\n", ret);
 		return ret;
-	} else {
-		dev_info(dev, "Sent reply\n");
 	}
 
 	return 0;
@@ -368,19 +363,16 @@ static int scsi_srpmb_kthread_work(void *data)
 	if (IS_ERR(srpmb_conn))
 		return PTR_ERR(srpmb_conn);
 
-	if (!wait_for_completion_timeout(&scsi_srpmb_sdev_ready, msecs_to_jiffies(5000))) {
+	if (!wait_for_completion_timeout(&scsi_srpmb_sdev_ready, msecs_to_jiffies(500))) {
 		dev_err(dev, "timeout occurred while waiting for scsi device\n");
 		ret = -ETIMEDOUT;
-		BUG_ON(1);
 		goto out;
 	}
 
 	while (!kthread_should_stop()) {
 		ret = scsi_srpmb_wait_request(srpmb_conn, dev);
-		if (ret) {
-			dev_err(dev, "Failed to wait request, ret = %d\n", ret);
+		if (ret)
 			goto out;
-		}
 
 		switch(ctx->req->type) {
 		case GET_WRITE_COUNTER:
@@ -395,13 +387,12 @@ static int scsi_srpmb_kthread_work(void *data)
 		default:
 			dev_err(dev, "Received unsupported request: %x\n", ctx->req->type);
 			ret = -EINVAL;
+			goto out;
 		}
-		if (ret)
-			continue;
 
 		ret = scsi_srpmb_send_reply(srpmb_conn, dev);
 		if (ret)
-			dev_err(dev, "Failed to send reply, ret = %d\n", ret);
+			goto out;
 	}
 
 out:
@@ -475,7 +466,6 @@ int scsi_srpmb_init_irq(struct scsi_srpmb_ctx *ctx)
 		dev_err(dev, "Fail to get irq number for scsi rpmb\n");
 		return -ENOENT;
 	}
-	dev_info(dev, "Requested irq resource\n");
 
 	/* Get irq_data from irq number */
 	rpmb_irqd = irq_get_irq_data(ctx->irq);
@@ -483,7 +473,6 @@ int scsi_srpmb_init_irq(struct scsi_srpmb_ctx *ctx)
 		dev_err(dev, "Fail to get irq_data from irq number\n");
 		return -ENOENT;
 	}
-	dev_info(dev, "Requested irq data\n");
 
 	/* Get hwirq from irq_data */
 	ctx->hwirq = irqd_to_hwirq(rpmb_irqd);
@@ -494,7 +483,6 @@ int scsi_srpmb_init_irq(struct scsi_srpmb_ctx *ctx)
 		dev_err(dev, "Fail to request irq handler for scsi srpmb, error=%d\n", ret);
 		return ret;
 	}
-	dev_info(dev, "Requested irq %d\n", ctx->irq);
 
 	return 0;
 }
@@ -513,8 +501,6 @@ static int scsi_srpmb_register_resources(struct scsi_srpmb_ctx *ctx)
 	ret = exynos_smc(SMC_SRPMB_WSM, ctx->wsm_phyaddr, ctx->hwirq, 0);
 	if (ret)
 		dev_err(dev, "Fail to smc call to registed scsi srpmb resources: error=%d\n", ret);
-
-	dev_info(dev, "Registered WSM\n");
 
 	return ret;
 }
@@ -552,7 +538,6 @@ static int scsi_srpmb_probe(struct platform_device *pdev)
 	}
 
 	platform_set_drvdata(pdev, ctx);
-	dev_info(dev, "Published  context\n");
 
 	scsi_srpmb_kthread = kthread_run(scsi_srpmb_kthread_work, ctx, "scsi_srpmb_worker");
 	if (IS_ERR(scsi_srpmb_kthread)) {

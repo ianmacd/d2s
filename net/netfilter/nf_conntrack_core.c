@@ -1198,6 +1198,8 @@ __nf_conntrack_alloc(struct net *net,
 	ct->status = 0;
 #ifdef CONFIG_LINK_FORWARD
 	ct->packet_count = 0;
+	ct->linkforward_registered = false;
+	ct->netdev = NULL;
 #endif
 	write_pnet(&ct->ct_net, net);
 	memset(&ct->__nfct_init_offset[0], 0,

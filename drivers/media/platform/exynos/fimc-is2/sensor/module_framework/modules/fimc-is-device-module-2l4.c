@@ -260,6 +260,9 @@ static int sensor_2l4_power_setpin(struct device *dev,
 #endif
 
 	/******************** NORMAL ON ********************/
+#ifdef USE_TOF_IO_DENOISE_REAR_CAMERA_IO
+	SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON, gpio_none, "VDDIO_1.8V_TOF", PIN_REGULATOR, 1, 0);
+#endif
 	SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON, gpio_reset, "sen_rst low", PIN_OUTPUT, 0, 0);
 	SET_PIN_VOLTAGE(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON, gpio_none, "VDDD_RET_1.0V_CAM", PIN_REGULATOR, 1, 1, 1025000);
 	SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON, gpio_none, "VDDA_2.8V_CAM", PIN_REGULATOR, 1, 0);
@@ -348,6 +351,9 @@ static int sensor_2l4_power_setpin(struct device *dev,
 	SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, gpio_none, "VDDIO_1.8V_CAM", PIN_REGULATOR, 0, 10);
 	SET_PIN_SHARED(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, SRT_RELEASE,
 			&core->shared_rsc_slock[SHARED_PIN6], &core->shared_rsc_count[SHARED_PIN6], 0);
+#ifdef USE_TOF_IO_DENOISE_REAR_CAMERA_IO
+	SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, gpio_none, "VDDIO_1.8V_TOF", PIN_REGULATOR, 0, 0);
+#endif
 
 #ifdef CONFIG_SENSOR_RETENTION_USE
 	/******************** RETENTION ON (STAND BY ON) ********************/
@@ -384,6 +390,9 @@ static int sensor_2l4_power_setpin(struct device *dev,
 #endif
 	SET_PIN_VOLTAGE(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_SENSOR_RETENTION_ON, gpio_none, "VDDD_RET_1.0V_CAM", PIN_REGULATOR, 1, 100, 700000);
 	/*SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_SENSOR_RETENTION_ON, gpio_none, "VDDIO_1.8V_CAM", PIN_REGULATOR, 0, 10);*/
+#ifdef USE_TOF_IO_DENOISE_REAR_CAMERA_IO
+	SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_SENSOR_RETENTION_ON, gpio_none, "VDDIO_1.8V_TOF", PIN_REGULATOR, 0, 0);
+#endif
 
 #ifdef CONFIG_SENSORCORE_MCU_CONTROL
 	/******************** RETENTION ON HW INIT(without ois power control) ********************/

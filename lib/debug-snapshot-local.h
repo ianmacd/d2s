@@ -108,6 +108,7 @@ struct dbg_snapshot_desc {
 	int allcorelockup_detected;
 	int no_wdt_dev;
 	int debug_level;
+	int sjtag_status;
 };
 
 

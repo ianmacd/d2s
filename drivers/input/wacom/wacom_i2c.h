@@ -34,6 +34,7 @@ struct wacom_g5_platform_data {
 	bool support_dex;
 	u32 dex_rate;
 	bool table_swap;
+	bool use_vddio;
 };
 
 #endif /* _LINUX_WACOM_I2C_H */

@@ -35,7 +35,7 @@
 void (*mach_restart)(enum reboot_mode mode, const char *cmd);
 EXPORT_SYMBOL(mach_restart);
 
-/* INFORM2 */
+/* MINFORM */
 #define SEC_REBOOT_START_OFFSET		(24)
 #define SEC_REBOOT_END_OFFSET		(16)
 
@@ -45,7 +45,7 @@ enum sec_power_flags {
 	SEC_REBOOT_LPM = 0x70,
 };
 
-/* INFORM3 */
+/* PANIC INFORM */
 #define SEC_RESET_REASON_PREFIX 0x12345670
 #define SEC_RESET_SET_PREFIX    0xabc00000
 enum sec_reset_reason {
@@ -76,13 +76,13 @@ void sec_set_reboot_magic(int magic, int offset, int mask)
 {
 	u32 tmp = 0;
 
-	exynos_pmu_read(EXYNOS_PMU_INFORM2, &tmp);
+	exynos_pmu_read(SEC_DEBUG_MAGIC_INFORM, &tmp);
 	pr_info("%s: prev: %x\n", __func__, tmp);
 	mask <<= offset;
 	tmp &= (~mask);
 	tmp |= magic << offset;
 	pr_info("%s: set as: %x\n", __func__, tmp);
-	exynos_pmu_write(EXYNOS_PMU_INFORM2, tmp);
+	exynos_pmu_write(SEC_DEBUG_MAGIC_INFORM, tmp);
 }
 
 static void sec_power_off(void)
@@ -175,54 +175,54 @@ static void sec_reboot(enum reboot_mode reboot_mode, const char *cmd)
 	if (cmd) {
 		unsigned long value;
 		if (!strcmp(cmd, "fota"))
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_FOTA);
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_REASON_FOTA);
 		else if (!strcmp(cmd, "fota_bl"))
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_FOTA_BL);
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_REASON_FOTA_BL);
 		else if (!strcmp(cmd, "recovery"))
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_RECOVERY);
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_REASON_RECOVERY);
 		else if (!strcmp(cmd, "download"))
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_DOWNLOAD);
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_REASON_DOWNLOAD);
 		else if (!strcmp(cmd, "bootloader"))
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_BOOTLOADER);
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_REASON_BOOTLOADER);
 		else if (!strcmp(cmd, "upload"))
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_UPLOAD);
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_REASON_UPLOAD);
 		else if (!strcmp(cmd, "secure"))
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_SECURE);
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_REASON_SECURE);
 		else if (!strcmp(cmd, "fwup"))
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_FWUP);
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_REASON_FWUP);
 		else if (!strcmp(cmd, "em_mode_force_user"))
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_EM_FUSE);
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_REASON_EM_FUSE);
 #if defined(CONFIG_SEC_ABC)
 		else if (!strcmp(cmd, "user_dram_test") && sec_abc_get_enabled())
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_USER_DRAM_TEST);
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_USER_DRAM_TEST);
 #endif
 		else if (!strncmp(cmd, "emergency", 9))
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_EMERGENCY);
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_REASON_EMERGENCY);
 		else if (!strncmp(cmd, "debug", 5) && !kstrtoul(cmd + 5, 0, &value))
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_SET_DEBUG | value);
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_SET_DEBUG | value);
 		else if (!strncmp(cmd, "forceupload", 11) && !kstrtoul(cmd + 11, 0, &value))
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_SET_FORCE_UPLOAD | value);
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_SET_FORCE_UPLOAD | value);
 		else if (!strncmp(cmd, "swsel", 5) && !kstrtoul(cmd + 5, 0, &value))
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_SET_SWSEL | value);
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_SET_SWSEL | value);
 		else if (!strncmp(cmd, "sud", 3) && !kstrtoul(cmd + 3, 0, &value))
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_SET_SUD | value);
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_SET_SUD | value);
 		else if (!strncmp(cmd, "cpmem_on", 8))
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_CP_DBGMEM | 0x1);
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_CP_DBGMEM | 0x1);
 		else if (!strncmp(cmd, "cpmem_off", 9))
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_CP_DBGMEM | 0x2);
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_CP_DBGMEM | 0x2);
 		else if (!strncmp(cmd, "mbsmem_on", 9))
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_CP_DBGMEM | 0x1);
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_CP_DBGMEM | 0x1);
 		else if (!strncmp(cmd, "mbsmem_off", 10))
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_CP_DBGMEM | 0x2);
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_CP_DBGMEM | 0x2);
 		else if (!strncmp(cmd, "panic", 5)) {
 			/*
-			 * This line is intentionally blanked because the INFORM3 is used for upload cause
+			 * This line is intentionally blanked because the PANIC INFORM is used for upload cause
 			 * in sec_debug_set_upload_cause() only in case of  panic() .
 			 */
 		} else
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_UNKNOWN);
+			exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_REASON_UNKNOWN);
 	} else {
-		exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_UNKNOWN);
+		exynos_pmu_write(SEC_DEBUG_PANIC_INFORM, SEC_RESET_REASON_UNKNOWN);
 	}
 
 	flush_cache_all();

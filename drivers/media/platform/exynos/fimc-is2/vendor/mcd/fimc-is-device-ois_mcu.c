@@ -1987,12 +1987,12 @@ int fimc_is_ois_init_mcu(struct v4l2_subdev *subdev)
 	u8 read_gyrocalcen = 0;
 #endif
 	u8 val = 0;
-#if defined(CONFIG_CAMERA_BEYOND0) || defined(CONFIG_CAMERA_BEYOND1) || defined(CONFIG_CAMERA_BEYOND2)
+#if defined(CONFIG_CAMERA_BEYOND0) || defined(CONFIG_CAMERA_BEYOND1)  ||defined(CONFIG_CAMERA_BEYOND2) || defined(CONFIG_CAMERA_BEYONDX)
 	u8 gyro_orientation = 0;
 	u8 wx_pole = 0;
 	u8 wy_pole = 0;
 #endif
-#if defined(CONFIG_CAMERA_BEYOND1) || defined(CONFIG_CAMERA_BEYOND2)
+#if defined(CONFIG_CAMERA_BEYOND1) || defined(CONFIG_CAMERA_BEYOND2) || defined(CONFIG_CAMERA_BEYONDX)
 	u8 tx_pole = 0;
 	u8 ty_pole = 0;
 #endif
@@ -2134,13 +2134,20 @@ int fimc_is_ois_init_mcu(struct v4l2_subdev *subdev)
 				ty_pole = 0x0;
 			}
 			info("%s [B1/B2] hw version is 0x%08x\n", __func__, sec_hw_rev);
+#elif defined(CONFIG_CAMERA_BEYONDX)
+			wx_pole = 0x01;
+			wy_pole = 0x01;
+			gyro_orientation = 0x20;
+			tx_pole = 0x0;
+			ty_pole = 0x0;
+			info("%s [BX] hw version is 0x%08x\n", __func__, sec_hw_rev);
 #endif
 
-#if defined(CONFIG_CAMERA_BEYOND0) || defined(CONFIG_CAMERA_BEYOND1) || defined(CONFIG_CAMERA_BEYOND2)
+#if defined(CONFIG_CAMERA_BEYOND0) || defined(CONFIG_CAMERA_BEYOND1) || defined(CONFIG_CAMERA_BEYOND2) || defined(CONFIG_CAMERA_BEYONDX)
 			ret = fimc_is_ois_i2c_write(client, 0x0240, wx_pole);
 			ret |= fimc_is_ois_i2c_write(client, 0x0241, wy_pole);
 			ret |= fimc_is_ois_i2c_write(client, 0x0242, gyro_orientation);
-#if defined(CONFIG_CAMERA_BEYOND1) || defined(CONFIG_CAMERA_BEYOND2)
+#if defined(CONFIG_CAMERA_BEYOND1) || defined(CONFIG_CAMERA_BEYOND2) || defined(CONFIG_CAMERA_BEYONDX)
 			ret |= fimc_is_ois_i2c_write(client, 0x0552, tx_pole);
 			ret |= fimc_is_ois_i2c_write(client, 0x0553, ty_pole);
 #endif

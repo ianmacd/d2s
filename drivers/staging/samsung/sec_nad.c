@@ -125,10 +125,27 @@ static void sec_nad_param_update(struct work_struct *work)
 				"NADX : %s\n"
 				"NADX result : %s\n"
 				"NADX data : 0x%x\n"
+				"NADX inform2_data : 0x%x\n"
+				"NADX inform3_data : 0x%x\n"
 				"NADX nadx_is_excuted : %d\n", sec_nad_env.nad_extend,
 				sec_nad_env.nad_extend_result,
 				sec_nad_env.nad_extend_data,
-				sec_nad_env.nadx_is_excuted);	
+				sec_nad_env.nad_extend_inform2_data,
+				sec_nad_env.nad_extend_inform3_data,
+				sec_nad_env.nadx_is_excuted);
+				
+				
+				NAD_PRINT(			
+				"NADX SECOND: %s\n"
+				"NADX SECOND result : %s\n"
+				"NADX SECOND data : 0x%x\n"
+				"NADX SECOND inform2_data : 0x%x\n"
+				"NADX SECOND inform3_data : 0x%x\n",
+				sec_nad_env.nad_extend_second,
+				sec_nad_env.nad_extend_second_result,
+				sec_nad_env.nad_extend_second_data,
+				sec_nad_env.nad_extend_second_inform2_data,
+				sec_nad_env.nad_extend_second_inform3_data);		
 #endif				
 
 #endif
@@ -928,10 +945,10 @@ static ssize_t show_nad_stat(struct device *dev,
 				/* VST */
 				get_vst_result(), get_vst_adjust(), sec_nad_env.vst_info.vst_f_res,
 				sec_nad_env.nAsv_TABLE,
-				sec_nad_env.nad_ave_current_info.current_list[5].vst_current,sec_nad_env.nad_ave_current_info.current_list[6].vst_current,
-				sec_nad_env.nad_ave_current_info.current_list[11].vst_current,sec_nad_env.nad_ave_current_info.current_list[12].vst_current,
-				sec_nad_env.nad_ave_current_info.current_list[17].vst_current,sec_nad_env.nad_ave_current_info.current_list[18].vst_current,
-				sec_nad_env.nad_ave_current_info.current_list[20].vst_current,sec_nad_env.nad_ave_current_info.current_list[21].vst_current);
+				sec_nad_env.nad_ave_current_info.current_list[VST_BIG_UNZIP_L11].vst_current,sec_nad_env.nad_ave_current_info.current_list[VST_BIG_UNZIP_L16].vst_current,
+				sec_nad_env.nad_ave_current_info.current_list[VST_MIDD_UNZIP_L6].vst_current,sec_nad_env.nad_ave_current_info.current_list[VST_MIDD_UNZIP_L10].vst_current,
+				sec_nad_env.nad_ave_current_info.current_list[VST_LITT_UNZIP_L4].vst_current,sec_nad_env.nad_ave_current_info.current_list[VST_LITT_UNZIP_L6].vst_current,
+				sec_nad_env.nad_ave_current_info.current_list[VST_MIF_MEMTEST_L1].vst_current,sec_nad_env.nad_ave_current_info.current_list[VST_MIF_MEMTEST_L3].vst_current);
 #else
 				sec_nad_env.nad_second_dram_fail_information.nad_dram_fail_info[0].expected_val);
 #endif
@@ -978,10 +995,10 @@ static ssize_t show_nad_stat(struct device *dev,
 				/* VST */
 				get_vst_result(), get_vst_adjust(), sec_nad_env.vst_info.vst_f_res,
 				sec_nad_env.nAsv_TABLE,
-				sec_nad_env.nad_ave_current_info.current_list[5].vst_current,sec_nad_env.nad_ave_current_info.current_list[6].vst_current,
-				sec_nad_env.nad_ave_current_info.current_list[11].vst_current,sec_nad_env.nad_ave_current_info.current_list[12].vst_current,
-				sec_nad_env.nad_ave_current_info.current_list[17].vst_current,sec_nad_env.nad_ave_current_info.current_list[18].vst_current,
-				sec_nad_env.nad_ave_current_info.current_list[20].vst_current,sec_nad_env.nad_ave_current_info.current_list[21].vst_current);
+				sec_nad_env.nad_ave_current_info.current_list[VST_BIG_UNZIP_L11].vst_current,sec_nad_env.nad_ave_current_info.current_list[VST_BIG_UNZIP_L16].vst_current,
+				sec_nad_env.nad_ave_current_info.current_list[VST_MIDD_UNZIP_L6].vst_current,sec_nad_env.nad_ave_current_info.current_list[VST_MIDD_UNZIP_L10].vst_current,
+				sec_nad_env.nad_ave_current_info.current_list[VST_LITT_UNZIP_L4].vst_current,sec_nad_env.nad_ave_current_info.current_list[VST_LITT_UNZIP_L6].vst_current,
+				sec_nad_env.nad_ave_current_info.current_list[VST_MIF_MEMTEST_L1].vst_current,sec_nad_env.nad_ave_current_info.current_list[VST_MIF_MEMTEST_L3].vst_current);
 #else
 				sec_nad_env.nad_inform3_data & 0xFF);
 #endif
@@ -1369,7 +1386,7 @@ static ssize_t show_nad_fac_result(struct device *dev,
 		return sprintf(buf, "%s\n", sec_nad_env.nad_extend_result);
 	else if (!strncmp(sec_nad_env.nad_extend_result, "MAIN", 4))
 		return sprintf(buf, "%s\n", "FAIL,MAIN_NAD");
-	else if (!strncmp(sec_nad_env.nad_extend_result, "FAIL", 4))
+	else if (!strncmp(sec_nad_env.nad_extend_result, "FAIL", 4) && !strncasecmp(sec_nad_env.nad_extend_second_result, "FAIL", 4))
 		return sprintf(buf, "FAIL,NG_NADX_DAS(%s),BLOCK(%s),LEVEL(%d),VECTOR(%s),PRE(%d,%d,%d,%d,%d,%d)\n",
 					sec_nad_env.nad_extend_fail_info.das_string,
 					sec_nad_env.nad_extend_fail_info.block_string,
@@ -1381,6 +1398,8 @@ static ssize_t show_nad_fac_result(struct device *dev,
 					sec_nad_env.nad_X_Pre_Domain_Level[3],
 					sec_nad_env.nad_X_Pre_Domain_Level[4],
 					sec_nad_env.nad_X_Pre_Domain_Level[5]);
+	else if(!strncmp(sec_nad_env.nad_extend_result, "FAIL", 4) && !strncasecmp(sec_nad_env.nad_extend_second_result, "PASS", 4))
+		return sprintf(buf, "%s\n", sec_nad_env.nad_extend_second_result);
 	else
 		return sprintf(buf, "%s\n", "NG");
 }

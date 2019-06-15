@@ -772,9 +772,6 @@ static int __aod_ioctl_set_analog_clk(struct aod_dev_info *aod, unsigned long ar
 		}
 	}
 
-	if (clk.en)
-		props->prev_rotate = clk.rotate;
-
 exit_analog_ioctl:
 	return ret;
 }

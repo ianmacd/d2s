@@ -775,6 +775,31 @@ static void max77705_set_skipmode(struct max77705_charger_data *charger, int ena
 	}
 }
 
+static void max77705_set_b2sovrc(struct max77705_charger_data *charger, u32 ocp_current, u32 ocp_dtc)
+{
+	u8 reg_data = MAX77705_B2SOVRC_4_6A;
+
+	if (ocp_current == 0)
+		reg_data = MAX77705_B2SOVRC_DISABLE;
+	else
+		reg_data += (ocp_current - 4600) / 200;
+
+	max77705_update_reg(charger->i2c, MAX77705_CHG_REG_CNFG_05,
+		(reg_data << CHG_CNFG_05_REG_B2SOVRC_SHIFT),
+		CHG_CNFG_05_REG_B2SOVRC_MASK);
+
+	max77705_update_reg(charger->i2c, MAX77705_CHG_REG_CNFG_06,
+		((ocp_dtc == 100 ? MAX77705_B2SOVRC_DTC_100MS : 0) << CHG_CNFG_06_B2SOVRC_DTC_SHIFT),
+		CHG_CNFG_06_B2SOVRC_DTC_MASK);
+
+	max77705_read_reg(charger->i2c, MAX77705_CHG_REG_CNFG_05, &reg_data);
+	pr_info("%s : CHG_CNFG_05(0x%02x)\n", __func__, reg_data);
+	max77705_read_reg(charger->i2c, MAX77705_CHG_REG_CNFG_06, &reg_data);
+	pr_info("%s : CHG_CNFG_06(0x%02x)\n", __func__, reg_data);
+
+	return;
+}
+
 static int max77705_check_wcin_before_otg_on(struct max77705_charger_data *charger)
 {
     union power_supply_propval value = {0,};
@@ -968,11 +993,14 @@ static void max77705_charger_initialize(struct max77705_charger_data *charger)
 			CHG_CNFG_02_OTG_ILIM_MASK);
 #endif
 
-	/* BAT to SYS OCP 5.6A, UNO ILIM 1.0A */
+	/* UNO ILIM 1.0A */
 	max77705_update_reg(charger->i2c, MAX77705_CHG_REG_CNFG_05,
-			(MAX77705_B2SOVRC_5_6A << CHG_CNFG_05_REG_B2SOVRC_SHIFT) |
-			(MAX77705_UNOILIM_1000 << CHG_CNFG_05_REG_UNOILIM_SHIFT),
-			CHG_CNFG_05_REG_B2SOVRC_MASK |CHG_CNFG_05_REG_UNOILIM_MASK);
+			MAX77705_UNOILIM_1000 << CHG_CNFG_05_REG_UNOILIM_SHIFT,
+			CHG_CNFG_05_REG_UNOILIM_MASK);
+
+	/* BAT to SYS OCP */
+	max77705_set_b2sovrc(charger, charger->pdata->chg_ocp_current, charger->pdata->chg_ocp_dtc);
+
 	/*
 	 * top off current 150mA
 	 * top off timer 30min
@@ -2527,6 +2555,24 @@ static int max77705_charger_parse_dt(struct max77705_charger_data *charger)
 		pr_info("%s: battery,chg_float_voltage is %d\n", __func__,
 			pdata->chg_float_voltage);
 		charger->float_voltage = pdata->chg_float_voltage;
+
+		ret = of_property_read_u32(np, "battery,chg_ocp_current",
+					   &pdata->chg_ocp_current);
+		if (ret) {
+			pr_info("%s: battery,chg_ocp_current is Empty\n", __func__);
+			pdata->chg_ocp_current = 5600; /* mA */
+		}
+		pr_info("%s: battery,chg_ocp_current is %d\n", __func__,
+			pdata->chg_ocp_current);
+
+		ret = of_property_read_u32(np, "battery,chg_ocp_dtc",
+					   &pdata->chg_ocp_dtc);
+		if (ret) {
+			pr_info("%s: battery,chg_ocp_dtc is Empty\n", __func__);
+			pdata->chg_ocp_dtc = 6; /* ms */
+		}
+		pr_info("%s: battery,chg_ocp_dtc is %d\n", __func__,
+			pdata->chg_ocp_dtc);
 
 		ret = of_property_read_string(np,
 					      "battery,wireless_charger_name",

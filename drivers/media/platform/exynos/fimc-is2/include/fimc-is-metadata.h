@@ -2014,8 +2014,7 @@ struct camera2_uctl {
 	uint8_t				countryCode[4];
 	enum camera_motion_state	motionState;
 	enum camera_client_index	cameraClientIndex;
-	int32_t 			remosaicResolutionMode;
-	uint32_t			reserved[6];
+	uint32_t			reserved[7];
 };
 
 struct camera2_udm {

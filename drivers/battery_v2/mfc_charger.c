@@ -1505,6 +1505,7 @@ static int LoadOTPLoaderInRAM(struct mfc_charger_data *charger, u16 addr)
 {
 	int i, size;
 	u8 data[1024];
+
 	if (mfc_reg_multi_write_verify(charger->client, addr, MTPBootloader9320, sizeof(MTPBootloader9320)) < 0) {
 		pr_err("%s,fail", __func__);
 	}
@@ -1513,7 +1514,7 @@ static int LoadOTPLoaderInRAM(struct mfc_charger_data *charger, u16 addr)
 	while(size > 0) {
 		if (mfc_reg_multi_read(charger->client, addr+i, data+i, 16) < 0) {
 			pr_err("%s, read failed(%d)", __func__, addr+i);
-			return 0;
+			return MFC_FWUP_ERR_ADDR_READ_FAIL;
 		}
 		i += 16;
 		size -= 16;
@@ -1521,9 +1522,9 @@ static int LoadOTPLoaderInRAM(struct mfc_charger_data *charger, u16 addr)
 	size = sizeof(MTPBootloader9320);
 	if (datacmp(data, MTPBootloader9320, size)) {
 		pr_err("%s, data is not matched\n", __func__);
-		return 0;
+		return MFC_FWUP_ERR_DATA_NOT_MATCH;
 	}
-	return 1;
+	return MFC_FWUP_ERR_SUCCEEDED;
 }
 
 static int mfc_firmware_verify(struct mfc_charger_data *charger)
@@ -1642,7 +1643,7 @@ bool WriteWordToMtp(struct mfc_charger_data *charger, u16 StartAddr, u32 data)
 	return true;
 }
 
-bool mfc_check_idt_info_page(struct mfc_charger_data *charger)
+int mfc_check_idt_info_page(struct mfc_charger_data *charger)
 {
 	u8 i = 0;
 	u8 rdata = 0;
@@ -1659,19 +1660,19 @@ bool mfc_check_idt_info_page(struct mfc_charger_data *charger)
 	*/
 	if (mfc_reg_write(charger->client, 0x3004, 0x00) < 0) {
 		pr_err("%s: Configure clocks and timing error (1)\n", __func__);
-		return false;
+		return MFC_FWUP_ERR_CLK_TIMING_ERR1;
 	}
 	if (mfc_reg_write(charger->client, 0x3008, 0x09) < 0) {
 		pr_err("%s: Configure clocks and timing error (2)\n", __func__);
-		return false;
+		return MFC_FWUP_ERR_CLK_TIMING_ERR2;
 	}
 	if (mfc_reg_write(charger->client, 0x300c, 0x05) < 0) {
 		pr_err("%s: Configure clocks and timing error (3)\n", __func__);
-		return false;
+		return MFC_FWUP_ERR_CLK_TIMING_ERR3;
 	}
 	if (mfc_reg_write(charger->client, 0x300d, 0x1D) < 0) {
 		pr_err("%s: Configure clocks and timing error (4)\n", __func__);
-		return false;
+		return MFC_FWUP_ERR_CLK_TIMING_ERR4;
 	}
 
 	/*
@@ -1680,7 +1681,7 @@ bool mfc_check_idt_info_page(struct mfc_charger_data *charger)
 	*/
 	if (mfc_reg_write(charger->client, 0x3040, 0x11) < 0) {
 		pr_err("%s: Pause the processor and enable MTP access via I2C error\n", __func__);
-		return false;
+		return MFC_FWUP_ERR_INFO_PAGE_EMPTY;
 	}
 
 	/*
@@ -1690,19 +1691,19 @@ bool mfc_check_idt_info_page(struct mfc_charger_data *charger)
 	for (i = 0; i < numBytesToCheck; i++)
 	{
 		if (mfc_reg_read(charger->client, infoPageAddr, &rdata) < 0)
-			return false;
+			return MFC_FWUP_ERR_INFO_PAGE_EMPTY;
 
 		if (rdata != 0xFF) {
 			pr_info("%s: Info page is programmed, f/w update allowed\n", __func__);
-			return true;
+			return MFC_FWUP_ERR_SUCCEEDED;
 		}
 		// All bytes have data other than 0xFF
 		if (i == (numBytesToCheck - 1)) {
 			pr_info("%s: Info page is empty\n", __func__);
-			return false;
+			return MFC_FWUP_ERR_INFO_PAGE_EMPTY;
 		}
 	}
-	return false;
+	return MFC_FWUP_ERR_INFO_PAGE_EMPTY;
 }
 
 /* Load MTP utility in RAM */
@@ -1724,7 +1725,7 @@ static int LoadMTPVerifierInRAM(struct mfc_charger_data *charger, u16 addr)
         numOfByteToRead = size >= 16 ? 16 : size;
 		if (mfc_reg_multi_read(charger->client, addr+i, data+i, numOfByteToRead) < 0) {
 			pr_err("%s, read failed(%d)", __func__, addr+i);
-			return 0;
+			return MFC_VERIFY_ERR_ADDR_READ_FAIL;
 		}
 		i += 16;
 		size -= 16;
@@ -1732,9 +1733,9 @@ static int LoadMTPVerifierInRAM(struct mfc_charger_data *charger, u16 addr)
 	size = sizeof(MTPVerifier9320); // 'size' is changed, get MTPVerifier9320 size again
 	if (datacmp(data, MTPVerifier9320, size)) {
 		pr_err("%s, data is not matched\n", __func__);
-		return 0;
+		return MFC_VERIFY_ERR_DATA_NOT_MATCH;
 	}
-	return 1;
+	return MFC_FWUP_ERR_SUCCEEDED;
 }
 
 
@@ -1744,6 +1745,7 @@ static int VerifyMTPwRAM_IDT(struct mfc_charger_data *charger, unsigned short st
 {
 	u8 sBuf[8];
 	u8 mtp_verify_cnt = 0;
+	int ret;
 
 	mfc_uno_on(charger, false);
 	msleep(1000);
@@ -1751,33 +1753,34 @@ static int VerifyMTPwRAM_IDT(struct mfc_charger_data *charger, unsigned short st
 	msleep(300);
 
 	if (mfc_reg_write(charger->client, 0x3000, 0x5a) < 0) {
-		pr_err("%s: write key error\n", __func__);
-		return false;		// write key
+		pr_err("%s %s: write key error\n", MFC_FW_MSG, __func__);
+		return MFC_VERIFY_ERR_WIRTE_KEY_ERR;		// write key
 	}
 
 	msleep(10);
 	if (mfc_reg_write(charger->client, 0x3040, 0x10) < 0) {
-		pr_err("%s: halt M0 error\n", __func__);
-		return false;		// halt M0
+		pr_err("%s %s: halt M0 error\n", MFC_FW_MSG, __func__);
+		return MFC_VERIFY_ERR_HALT_M0_ERR;		// halt M0
 	}
 
 	msleep(10);
-	if (!LoadMTPVerifierInRAM(charger, 0x800)){
-		pr_err("%s: LoadMTPVerifierInRAM error\n", __func__);
-		return false;		// make sure load address and 1KB size are OK
+	ret = LoadMTPVerifierInRAM(charger, 0x800);
+	if (ret != MFC_FWUP_ERR_SUCCEEDED){
+		pr_err("%s %s: LoadMTPVerifierInRAM error\n", MFC_FW_MSG, __func__);
+		return ret;		// make sure load address and 1KB size are OK
 	}
 
 	msleep(10);
 	// Clear MTP program status byte
 	if (mfc_reg_write(charger->client, 0x0400, 0x00) < 0) {
-			pr_err("%s: clear MTP verifier status byte error\n", __func__);
-		   return false;
+			pr_err("%s %s: clear MTP verifier status byte error\n", MFC_FW_MSG, __func__);
+		   return MFC_VERIFY_ERR_CLR_MTP_STATUS_BYTE;
 	}
 
 	msleep(10);
 	if (mfc_reg_write(charger->client, 0x3048, 0xd0) < 0) {
-		pr_err("%s: map RAM to MTP error\n", __func__);
-		return false;		// map RAM to MTP
+		pr_err("%s %s: map RAM to MTP error\n", MFC_FW_MSG, __func__);
+		return MFC_VERIFY_ERR_MAP_RAM_TO_OTP_ERR;		// map RAM to MTP
 	}
 
 	// Check Key lock state
@@ -1785,23 +1788,23 @@ static int VerifyMTPwRAM_IDT(struct mfc_charger_data *charger, unsigned short st
 	msleep(100);
 
 	if (mfc_reg_write(charger->client, 0x3000, 0x5A) < 0) {	//unlock system registers
-		pr_err("%s: unlock system registers error\n", __func__);
-		return false;		// unlock system registers
+		pr_err("%s %s: unlock system registers error\n", MFC_FW_MSG, __func__);
+		return MFC_VERIFY_ERR_UNLOCK_SYS_REG_ERR;		// unlock system registers
 	}
 
 	if (mfc_reg_write(charger->client, 0x300D, 0x04) < 0) {	//set LDO clock to 2MHz
-		pr_err("%s: set LDO clock to 2MHz error\n", __func__);
-		return false;		// set LDO to 2MHz
+		pr_err("%s %s: set LDO clock to 2MHz error\n", MFC_FW_MSG, __func__);
+		return MFC_VERIFY_ERR_LDO_CLK_2MHZ_ERR;		// set LDO to 2MHz
 	}
 
 	if (mfc_reg_write(charger->client, 0x3010, 0x6C) < 0) {	//set LDO output voltage as 5.5V
-		pr_err("%s: set LDO output voltage as 5.5V error\n", __func__);
-		return false;		// set LDO voltage to 5.5V
+		pr_err("%s %s: set LDO output voltage as 5.5V error\n", MFC_FW_MSG, __func__);
+		return MFC_VERIFY_ERR_LDO_OUTPUT_5_5V_ERR;		// set LDO voltage to 5.5V
 	}
 
 	if (mfc_reg_write(charger->client, 0x301C, 0x09) < 0) {	//enable LDO
-		pr_err("%s: enable LDO error\n", __func__);
-		return false;		// enable LDO
+		pr_err("%s %s: enable LDO error\n", MFC_FW_MSG, __func__);
+		return MFC_VERIFY_ERR_ENABLE_LDO_ERR;		// enable LDO
 	}
 
 	sBuf[0] = 0;
@@ -1816,15 +1819,15 @@ static int VerifyMTPwRAM_IDT(struct mfc_charger_data *charger, unsigned short st
 	msleep(10);
 	if (mfc_reg_multi_write(charger->client, 0x400, sBuf, sizeof(sBuf)) < 0)
 	{
-		pr_err("ERROR: on writing to MTP verification buffer");
-		return false;
+		pr_err("%s ERROR: on writing to MTP verification buffer", MFC_FW_MSG);
+		return MFC_VERIFY_ERR_WRITING_TO_MTP_VERIFY_BUFFER;
 	}
 
 	// Start MTP verification
 	msleep(10);
 	if (mfc_reg_write(charger->client, 0x400, 0x11) < 0) {
-		pr_err("%s: Start MTP verification error\n", __func__);
-		return false;		// map RAM to MTP
+		pr_err("%s %s: Start MTP verification error\n", MFC_FW_MSG, __func__);
+		return MFC_VERIFY_ERR_START_MTP_VERIFY_ERR;		// map RAM to MTP
 	}
 
 	do
@@ -1832,11 +1835,11 @@ static int VerifyMTPwRAM_IDT(struct mfc_charger_data *charger, unsigned short st
 		msleep(20);
 		if (mfc_reg_read(charger->client, 0x401, sBuf) < 0)
 		{
-			pr_err("ERROR: on reading MTP verification status(%d)", mtp_verify_cnt);
-			return false;
+			pr_err("%s ERROR: on reading MTP verification status(%d)", MFC_FW_MSG, mtp_verify_cnt);
+			return MFC_VERIFY_ERR_READING_MTP_VERIFY_STATUS;
 		}
 		if (mtp_verify_cnt > 1000) {
-			pr_err("ERROR: time out on buffer verification program to MTP");
+			pr_err("%s ERROR: time out on buffer verification program to MTP", MFC_FW_MSG);
 			break;
 		}
 		mtp_verify_cnt++;
@@ -1845,30 +1848,38 @@ static int VerifyMTPwRAM_IDT(struct mfc_charger_data *charger, unsigned short st
 	msleep(10);
 	if (mfc_reg_read(charger->client, 0x401, sBuf) < 0)
 	{
-		pr_err("ERROR: on reading MTP verification pass/fail");
+		pr_err("%s ERROR: on reading MTP verification pass/fail", MFC_FW_MSG);
 		return false;
 	}
 
 	if (sBuf[0] != 2) // not OK
 	{
-		if (sBuf[0] == 4)
-			pr_err("CRC BUSY ERROR\n");
-		else
-			pr_err("UNKNOWN ERR\n");
-		pr_err("ERROR: buffer write to OTP returned status %d in sector 0x%x ",sBuf[0], mtp_verify_cnt);
-		return false;
+		if (sBuf[0] == 1) {
+			ret = MFC_VERIFY_ERR_CRC_BUSY;
+			pr_err("%s: CRC BUSY ERROR\n", MFC_FW_MSG);
+		} else if (sBuf[0] == 4) {
+			ret = MFC_VERIFY_ERR_CRC_ERROR;
+			pr_err("%s: CRC ERROR\n", MFC_FW_MSG);
+		}
+		else {
+			ret = MFC_VERIFY_ERR_UNKOWN_ERR;
+			pr_err("%s UNKNOWN ERR\n", MFC_FW_MSG);
+		}
+		pr_err("%s ERROR: buffer write to OTP returned status %d in sector 0x%x ",
+			MFC_FW_MSG, sBuf[0], mtp_verify_cnt);
+		return ret;
 	}
 
 	msleep(10);
 
 	pr_err("MTP verification finished in");
-	return true;
+	return MFC_FWUP_ERR_SUCCEEDED;
 }
 
 static int PgmOTPwRAM_IDT(struct mfc_charger_data *charger, unsigned short OtpAddr,
 					  const u8 * srcData, int srcOffs, int size)
 {
-	int i, cnt;
+	int i, cnt, ret;
 	u8 fw_major[2] = {0,};
 	u8 fw_minor[2] = {0,};
 	u16 BaseAddr = 0, Offset = 0;
@@ -1881,35 +1892,37 @@ static int PgmOTPwRAM_IDT(struct mfc_charger_data *charger, unsigned short OtpAd
 	msleep(10);
 	if (mfc_reg_write(charger->client, 0x3000, 0x5a) < 0) {
 		pr_err("%s: write key error\n", __func__);
-		return false;		// write key
+		return MFC_FWUP_ERR_WIRTE_KEY_ERR;		// write key
 	}
 
-	if (!mfc_check_idt_info_page(charger)) {
+	ret = mfc_check_idt_info_page(charger);
+	if (ret != MFC_FWUP_ERR_SUCCEEDED) {
 		pr_info("%s: f/w update NOT allowed, info page is empty!!!\n", __func__);
-		return false;
+		return ret;
 	}
 
 	msleep(10);
 	if (mfc_reg_write(charger->client, 0x3040, 0x10) < 0) {
 		pr_err("%s: halt M0 error\n", __func__);
-		return false;		// halt M0
+		return MFC_FWUP_ERR_HALT_M0_ERR;		// halt M0
 	}
 	msleep(10);
-	if (!LoadOTPLoaderInRAM(charger, 0x1c00)){
+	ret = LoadOTPLoaderInRAM(charger, 0x1c00);
+	if (ret != MFC_FWUP_ERR_SUCCEEDED){
 		pr_err("%s: LoadOTPLoaderInRAM error\n", __func__);
-		return false;		// make sure load address and 1KB size are OK
+		return ret;		// make sure load address and 1KB size are OK
 	}
 	msleep(10);
 
 	// Clear MTP program status byte
 	if (mfc_reg_write(charger->client, 0x0400, 0x00) < 0) {
 			pr_err("%s: clear MTP programming status byte error\n", __func__);
-		   return false;
+		   return MFC_FWUP_ERR_CLR_MTP_STATUS_BYTE;
 	}
 
 	if (mfc_reg_write(charger->client, 0x3048, 0x80) < 0) {
 		pr_err("%s: map RAM to OTP error\n", __func__);
-		return false;		// map RAM to OTP
+		return MFC_FWUP_ERR_MAP_RAM_TO_OTP_ERR;		// map RAM to OTP
 	}
 
 	// Check Key lock state
@@ -1974,7 +1987,7 @@ static int PgmOTPwRAM_IDT(struct mfc_charger_data *charger, unsigned short OtpAd
 		if (mfc_reg_multi_write(charger->client, 0x400, sBuf, ((CodeLength+8+15)/16)*16) < 0)
 		{	// TODO the write size is aligned to 16 bytes. SS may not need to do this.
 			pr_err("ERROR: on writing to OTP buffer");
-			return false;
+			return MFC_FWUP_ERR_WRITING_TO_OTP_BUFFER;
 		}
 		sBuf[0] = 0x01;	// TODO write 0x11 if Vrect is powered from 5V
 			//write 0x31 if Vrect is powered from 8.2V
@@ -1983,7 +1996,7 @@ static int PgmOTPwRAM_IDT(struct mfc_charger_data *charger, unsigned short OtpAd
 		if (mfc_reg_write(charger->client, 0x400, sBuf[0]) < 0)
 		{
 			pr_err("ERROR: on OTP buffer validation");
-			return false;
+			return MFC_FWUP_ERR_OTF_BUFFER_VALIDATION;
 		}
 		cnt = 0;
 		do
@@ -1992,7 +2005,7 @@ static int PgmOTPwRAM_IDT(struct mfc_charger_data *charger, unsigned short OtpAd
 			if (mfc_reg_read(charger->client, 0x400, sBuf) < 0)
 			{
 				pr_err("ERROR: on readign OTP buffer status(%d)", cnt);
-				return false;
+				return MFC_FWUP_ERR_READING_OTP_BUFFER_STATUS;
 			}
 			if (cnt > 1000) {
 				pr_err("ERROR: time out on buffer program to OTP");
@@ -2003,14 +2016,18 @@ static int PgmOTPwRAM_IDT(struct mfc_charger_data *charger, unsigned short OtpAd
 
 		if (sBuf[0] != 2) // not OK
 		{
-			if (sBuf[0] == 4)
+			if (sBuf[0] == 4) {
 				pr_err("WRITE ERR\n");
-			else if (sBuf[0] == 8)
+				ret = MFC_FWUP_ERR_MTP_WRITE_ERR;
+			} else if (sBuf[0] == 8) {
 				pr_err("CHECKSUM ERR\n");
-			else
+				ret = MFC_FWUP_ERR_PKT_CHECKSUM_ERR;
+			} else {
 				pr_err("UNKNOWN ERR\n");
+				ret = MFC_FWUP_ERR_UNKNOWN_ERR;
+			}
 			pr_err("ERROR: buffer write to OTP returned status %d in sector 0x%x ",sBuf[0], i);
-			return false;
+			return ret;
 		}
 	}
 
@@ -2018,12 +2035,12 @@ static int PgmOTPwRAM_IDT(struct mfc_charger_data *charger, unsigned short OtpAd
 	if (!WriteWordToMtp(charger, MFC_FW_BIN_VERSION_ADDR, MFC_FW_BIN_FULL_VERSION)) {
 		// The address for fw rev 65 is 0x167C
 		pr_err("ERROR: on writing FW rev to MTP\n");
-		return false;
+		return MFC_FWUP_ERR_WRITING_FW_VERION;
 	}
 
 	pr_err("OTP Programming finished in");
 	pr_info("%s-------------------------------------------------\n", __func__);
-	return true;
+	return MFC_FWUP_ERR_SUCCEEDED;
 }
 
 static int mfc_write_fw_flash_LSI(struct mfc_charger_data *charger, u8 addr_l, u8 addr_h, u8 *wdata)
@@ -2088,13 +2105,13 @@ static int PgmOTPwRAM_LSI(struct mfc_charger_data *charger, unsigned short OtpAd
 	pr_info("%s: Enter the flash mode (0x1F10)\n", __func__);
 	if (mfc_reg_write(charger->client, 0x1F10, 0x10) < 0) {
 		pr_err("%s: failed to enter the flash mode\n", __func__);
-		return false;
+		return MFC_FWUP_ERR_FAIL;
 	}
 	msleep(100);
 	pr_info("%s: Erase the flash memory\n", __func__);
 	if (mfc_reg_write(charger->client, 0x1F10, 0x44) < 0) {
 		pr_err("%s: failed to erase flash\n", __func__);
-		return false;
+		return MFC_FWUP_ERR_FAIL;
 	}
 
 	msleep(250); /* erasing flash needs 200ms delay at least */
@@ -2103,7 +2120,7 @@ static int PgmOTPwRAM_LSI(struct mfc_charger_data *charger, unsigned short OtpAd
 	pr_info("%s: Erase boot code (0x1F10)\n", __func__);
 	if (mfc_reg_write(charger->client, 0x1F10, 0x55) < 0) {
 		pr_err("%s: failed to erase boot code\n", __func__);
-		return false;
+		return MFC_FWUP_ERR_FAIL;
 	}
 #endif
 	msleep(300);
@@ -2217,11 +2234,11 @@ static int PgmOTPwRAM_LSI(struct mfc_charger_data *charger, unsigned short OtpAd
 	pr_info("%s: Enter the normal mode\n", __func__);
 	if (mfc_reg_write(charger->client, 0x1F10, 0x20) < 0) {
 		pr_err("%s: failed to enter the normal mode\n", __func__);
-		return false;
+		return MFC_FWUP_ERR_FAIL;
 	}
 	msleep(10);
 
-	return true;
+	return MFC_FWUP_ERR_SUCCEEDED;
 }
 
 static void mfc_reset_rx_power(struct mfc_charger_data *charger, u8 rx_power)
@@ -2293,9 +2310,15 @@ static void mfc_wpc_afc_vout_work(struct work_struct *work)
 	if (value.intval)
 		goto skip_set_afc_vout;
 #endif
-	pr_info("%s: check OTG status(%d)\n", __func__, charger->is_otg_on);
+	pr_info("%s: check OTG(%d), full(%d) tx_id(%d)\n",
+		__func__, charger->is_otg_on, charger->is_full_status, charger->tx_id);
 
 	if (charger->is_otg_on)
+		goto skip_set_afc_vout;
+
+	if (charger->is_full_status &&
+		(charger->tx_id != TX_ID_DREAM_STAND &&
+			charger->tx_id != TX_ID_DREAM_DOWN))
 		goto skip_set_afc_vout;
 
 	if (charger->pdata->cable_type == SEC_WIRELESS_PAD_WPC_DUO_HV_20 ||
@@ -2346,7 +2369,7 @@ static void mfc_wpc_fw_update_work(struct work_struct *work)
 	switch(charger->fw_cmd) {
 	case SEC_WIRELESS_RX_SDCARD_MODE:
 		mfc_uno_on(charger, true);
-		charger->pdata->otp_firmware_result = MFC_FW_RESULT_DOWNLOADING;
+		charger->pdata->otp_firmware_result = MFC_FWUP_ERR_RUNNING;
 		msleep(200);
 		disable_irq(charger->pdata->irq_wpc_int);
 		disable_irq(charger->pdata->irq_wpc_det);
@@ -2397,10 +2420,7 @@ static void mfc_wpc_fw_update_work(struct work_struct *work)
 		charger->pdata->wc_ic_grade = mfc_get_ic_revision(charger, MFC_IC_FONT);
 		charger->pdata->wc_ic_rev = mfc_get_ic_revision(charger, MFC_IC_REVISION);
 
-		if (ret)
-			charger->pdata->otp_firmware_result = MFC_FW_RESULT_PASS;
-		else
-			charger->pdata->otp_firmware_result = MFC_FW_RESULT_FAIL;
+		charger->pdata->otp_firmware_result = ret;
 
 		kfree(fw_img);
 		enable_irq(charger->pdata->irq_wpc_int);
@@ -2408,7 +2428,7 @@ static void mfc_wpc_fw_update_work(struct work_struct *work)
 		break;
 	case SEC_WIRELESS_RX_BUILT_IN_MODE:
 		mfc_uno_on(charger, true);
-		charger->pdata->otp_firmware_result = MFC_FW_RESULT_DOWNLOADING;
+		charger->pdata->otp_firmware_result = MFC_FWUP_ERR_RUNNING;
 		msleep(200);
 		mfc_get_chip_id(charger);
 
@@ -2421,7 +2441,7 @@ static void mfc_wpc_fw_update_work(struct work_struct *work)
 				&charger->client->dev);
 			if ( ret < 0) {
 				dev_err(&charger->client->dev, "%s: failed to request firmware %s (%d)\n", __func__, MFC_FLASH_FW_HEX_LSI_PATH, ret);
-				charger->pdata->otp_firmware_result = MFC_FW_RESULT_FAIL;
+				charger->pdata->otp_firmware_result = MFC_FWUP_ERR_REQUEST_FW_BIN;
 				goto fw_err;
 			}
 			wake_lock(&charger->wpc_update_lock);
@@ -2434,14 +2454,14 @@ static void mfc_wpc_fw_update_work(struct work_struct *work)
 				&charger->client->dev);
 			if ( ret < 0) {
 				dev_err(&charger->client->dev, "%s: failed to request firmware %s (%d)\n", __func__, MFC_FLASH_FW_HEX_PATH, ret);
-				charger->pdata->otp_firmware_result = MFC_FW_RESULT_FAIL;
+				charger->pdata->otp_firmware_result = MFC_FWUP_ERR_REQUEST_FW_BIN;
 				goto fw_err;
 			}
 			wake_lock(&charger->wpc_update_lock);
 			pr_info("%s data size = %ld, chip_id(%d)\n", __func__, charger->firm_data_bin->size, charger->chip_id);
 			mfc_otp_update = 1;
 			ret = PgmOTPwRAM_IDT(charger, 0 ,charger->firm_data_bin->data, 0, charger->firm_data_bin->size);
-			if (ret) { // pass, let's begin verification
+			if (ret == MFC_FWUP_ERR_SUCCEEDED) { // pass, let's begin verification
 				ret = VerifyMTPwRAM_IDT(charger, MTP_VERIFY_ADDR,
 						MTP_VERIFY_SIZE, MTP_VERIFY_CHKSUM);
 			}
@@ -2465,10 +2485,7 @@ static void mfc_wpc_fw_update_work(struct work_struct *work)
 		charger->pdata->wc_ic_grade = mfc_get_ic_revision(charger, MFC_IC_FONT);
 		charger->pdata->wc_ic_rev = mfc_get_ic_revision(charger, MFC_IC_REVISION);
 
-		if (ret)
-			charger->pdata->otp_firmware_result = MFC_FW_RESULT_PASS;
-		else
-			charger->pdata->otp_firmware_result = MFC_FW_RESULT_FAIL;
+		charger->pdata->otp_firmware_result = ret;
 
 		for (i = 0; i < 8; i++) {
 			if (mfc_reg_read(charger->client, MFC_FW_DATA_CODE_0+i, &data) > 0)
@@ -2972,17 +2989,20 @@ static int mfc_chg_set_property(struct power_supply *psy,
 			}
 			charger->pdata->cs100_status = mfc_send_cs100(charger);
 #if !defined(CONFIG_SEC_FACTORY)
-			charger->is_full_status = 1;
-			if (is_hv_wireless_pad_type(charger->pdata->cable_type) &&
-				(charger->tx_id != TX_ID_DREAM_STAND &&
-				charger->tx_id != TX_ID_DREAM_DOWN)) {
-				charger->vout_mode = WIRELESS_VOUT_5_5V_STEP;
-				cancel_delayed_work(&charger->wpc_vout_mode_work);
-				wake_lock(&charger->wpc_vout_mode_lock);
-				queue_delayed_work(charger->wqueue,
-					&charger->wpc_vout_mode_work, msecs_to_jiffies(250));
+			if (!charger->is_full_status) {
+				charger->is_full_status = 1;
+				if (is_hv_wireless_pad_type(charger->pdata->cable_type) &&
+					(charger->tx_id != TX_ID_DREAM_STAND &&
+					charger->tx_id != TX_ID_DREAM_DOWN)) {
+					charger->vout_mode = WIRELESS_VOUT_5_5V_STEP;
+					cancel_delayed_work(&charger->wpc_vout_mode_work);
+					wake_lock(&charger->wpc_vout_mode_lock);
+					queue_delayed_work(charger->wqueue,
+						&charger->wpc_vout_mode_work, msecs_to_jiffies(250));
+				}
 			}
 #endif
+
 		} else if (val->intval == POWER_SUPPLY_STATUS_NOT_CHARGING) {
 			mfc_mis_align(charger);
 		} else if (val->intval == POWER_SUPPLY_PROP_CONSTANT_CHARGE_VOLTAGE) {
@@ -3292,7 +3312,7 @@ static int mfc_chg_set_property(struct power_supply *psy,
 			break;
 		case POWER_SUPPLY_EXT_PROP_WIRELESS_SEND_FSK:
 			/* send fsk packet for rx device aicl reset */
-			if (val->intval && (charger->wc_rx_type != SS_GEAR)) {
+			if (val->intval) {
 				pr_info("@Tx_mode %s: Send FSK packet for Rx device aicl reset\n", __func__);
 				mfc_send_fsk(charger, WPC_TX_COM_WPS, WPS_AICL_RESET);
 			}
@@ -3306,7 +3326,9 @@ static int mfc_chg_set_property(struct power_supply *psy,
 			break;
 		case POWER_SUPPLY_EXT_PROP_WIRELESS_AUTH_ADT_STATUS: /* it has only PASS and FAIL */
 #if !defined(CONFIG_SEC_FACTORY)
-			if(charger->pdata->cable_type != SEC_WIRELESS_PAD_NONE && !lpcharge) {
+			if((charger->pdata->cable_type != SEC_WIRELESS_PAD_NONE) &&
+				!lpcharge &&
+				(charger->adt_transfer_status != WIRELESS_AUTH_WAIT)) {
 				if(charger->adt_transfer_status != val->intval) {
 					charger->adt_transfer_status = val->intval;
 
@@ -3325,7 +3347,8 @@ static int mfc_chg_set_property(struct power_supply *psy,
 					queue_delayed_work(charger->wqueue, &charger->wpc_afc_vout_work, msecs_to_jiffies(0));
 				} else
 					pr_info("%s %s: skip a same pass/fail result\n", WC_AUTH_MSG, __func__);
-			}
+			}else
+				pr_info("%s %s: auth service sent wrong cmd \n", WC_AUTH_MSG, __func__);
 #endif
 			break;
 		case POWER_SUPPLY_EXT_PROP_WIRELESS_AUTH_ADT_DATA: /* data from auth service will be sent */

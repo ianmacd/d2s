@@ -397,7 +397,7 @@ static void iva_ctrl_mcu_boot_unprepare_system(struct iva_dev_data *iva)
 #ifdef CONFIG_PM_SLEEP
 	if (wake_lock_active(&iva->iva_wake_lock)) {
 		wake_unlock(&iva->iva_wake_lock);
-		dev_dbg(dev, "%s() wake_inlock, now(%d)\n",
+		dev_info(dev, "%s() wake_unlock, now(%d)\n",
 			__func__, wake_lock_active(&iva->iva_wake_lock));
 	}
 #endif

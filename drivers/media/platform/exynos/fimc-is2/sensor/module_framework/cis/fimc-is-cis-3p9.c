@@ -225,6 +225,11 @@ int sensor_3p9_cis_init(struct v4l2_subdev *subdev)
 	struct fimc_is_cis *cis;
 	u32 setfile_index = 0;
 	cis_setting_info setinfo;
+#ifdef USE_CAMERA_HW_BIG_DATA
+	struct cam_hw_param *hw_param = NULL;
+	struct fimc_is_device_sensor_peri *sensor_peri = NULL;
+#endif
+
 	setinfo.param = NULL;
 	setinfo.return_value = 0;
 
@@ -243,6 +248,13 @@ int sensor_3p9_cis_init(struct v4l2_subdev *subdev)
 
 	ret = sensor_cis_check_rev(cis);
 	if (ret < 0) {
+#ifdef USE_CAMERA_HW_BIG_DATA
+		sensor_peri = container_of(cis, struct fimc_is_device_sensor_peri, cis);
+		if (sensor_peri)
+			fimc_is_sec_get_hw_param(&hw_param, sensor_peri->module->position);
+		if (hw_param)
+			hw_param->i2c_sensor_err_cnt++;
+#endif
 		warn("sensor_3p9_check_rev is fail when cis init");
 		cis->rev_flag = true;
 		ret = 0;
@@ -1775,6 +1787,34 @@ p_err:
 	return ret;
 }
 
+int sensor_3p9_cis_set_factory_control(struct v4l2_subdev *subdev, u32 command)
+{
+	int ret = 0;
+	struct fimc_is_cis *cis = NULL;
+
+	WARN_ON(!subdev);
+
+	cis = (struct fimc_is_cis *)v4l2_get_subdevdata(subdev);
+	WARN_ON(!cis);
+	WARN_ON(!cis->cis_data);
+
+	switch (command) {
+	case FAC_CTRL_BIT_TEST:
+		pr_info("[%s] FAC_CTRL_BIT_TEST\n", __func__);
+		ret |= fimc_is_sensor_write16(cis->client, 0xFCFC, 0x4000);
+		ret |= fimc_is_sensor_write16(cis->client, 0xF44A, 0x01FF); // TG 3.16v
+		msleep(1);
+		ret |= fimc_is_sensor_write16(cis->client, 0xF44A, 0x0004); // TG 2.43v -> 2.14v
+		msleep(50);
+		ret |= fimc_is_sensor_write16(cis->client, 0xF44C, 0x0009); // RG 3.61v -> 3.18v
+		break;
+	default:
+		pr_info("[%s] not support command(%d)\n", __func__, command);
+	}
+
+	return ret;
+}
+
 static struct fimc_is_cis_ops cis_ops = {
 	.cis_init = sensor_3p9_cis_init,
 	.cis_log_status = sensor_3p9_cis_log_status,
@@ -1804,6 +1844,7 @@ static struct fimc_is_cis_ops cis_ops = {
 	.cis_wait_streamon = sensor_cis_wait_streamon,
 	.cis_set_initial_exposure = sensor_cis_set_initial_exposure,
 	.cis_recover_stream_on = sensor_3p9_cis_recover_stream_on,
+	.cis_set_factory_control = sensor_3p9_cis_set_factory_control,
 };
 
 static int cis_3p9_probe(struct i2c_client *client,

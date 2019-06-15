@@ -3346,6 +3346,43 @@ int sensor_2l4_cis_set_super_slow_motion_gmc_block_with_md_low(struct v4l2_subde
 	return ret;
 }
 
+int sensor_2l4_cis_set_factory_control(struct v4l2_subdev *subdev, u32 command)
+{
+	int ret = 0;
+	struct fimc_is_cis *cis = NULL;
+	struct fimc_is_module_enum *module;
+	struct fimc_is_device_sensor_peri *sensor_peri = NULL;
+	struct sensor_open_extended *ext_info = NULL;
+
+	WARN_ON(!subdev);
+
+	cis = (struct fimc_is_cis *)v4l2_get_subdevdata(subdev);
+	WARN_ON(!cis);
+	WARN_ON(!cis->cis_data);
+
+	sensor_peri = container_of(cis, struct fimc_is_device_sensor_peri, cis);
+	module = sensor_peri->module;
+	ext_info = &module->ext;
+	WARN_ON(!ext_info);
+
+	switch (command) {
+	case FAC_CTRL_BIT_TEST:
+		pr_info("[%s] FAC_CTRL_BIT_TEST\n", __func__);
+		ret |= fimc_is_sensor_write16(cis->client, 0xFCFC, 0x4000);
+		ret |= fimc_is_sensor_write16(cis->client, 0xF44A, 0x0009); // TG 2.55v -> 2.45v
+		ret |= fimc_is_sensor_write16(cis->client, 0xF44C, 0x0009); // TG 2.55v -> 2.45v
+		msleep(50);
+		ret |= fimc_is_sensor_write16(cis->client, 0xFCFC, 0x2000);
+		ret |= fimc_is_sensor_write16(cis->client, 0xAE16, 0x0010); // RG 3.70v -> 3.30v
+		ext_info->use_retention_mode = SENSOR_RETENTION_INACTIVE;
+		break;
+	default:
+		pr_info("[%s] not support command(%d)\n", __func__, command);
+	}
+
+	return ret;
+}
+
 int sensor_2l4_cis_compensate_gain_for_extremely_br(struct v4l2_subdev *subdev, u32 expo, u32 *again, u32 *dgain)
 {
 	int ret = 0;
@@ -3539,6 +3576,7 @@ static struct fimc_is_cis_ops cis_ops_2l4 = {
 	.cis_set_super_slow_motion_gmc_table_idx = sensor_2l4_cis_set_super_slow_motion_gmc_table_idx,
 	.cis_set_super_slow_motion_gmc_block_with_md_low = sensor_2l4_cis_set_super_slow_motion_gmc_block_with_md_low,
 	.cis_recover_stream_on = sensor_2l4_cis_recover_stream_on,
+	.cis_set_factory_control = sensor_2l4_cis_set_factory_control,
 };
 
 static int cis_2l4_probe(struct i2c_client *client,

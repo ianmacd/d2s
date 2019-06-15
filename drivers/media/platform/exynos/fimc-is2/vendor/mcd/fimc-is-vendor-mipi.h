@@ -50,6 +50,20 @@ struct cam_mipi_sensor_mode {
 	const u32 sensor_setting_size;
 };
 
+struct cam_tof_setting {
+	const u32 tx_freq;
+	const u32 *setting;
+	const u32 setting_size;
+};
+
+struct cam_tof_sensor_mode {
+	const u32 mode;
+	const struct cam_mipi_channel *mipi_channel;
+	const u32 mipi_channel_size;
+	const struct cam_tof_setting *sensor_setting;
+	const u32 sensor_setting_size;
+};
+
 /* RAT */
 enum {
 	CAM_RAT_1_GSM = 1,

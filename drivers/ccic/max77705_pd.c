@@ -53,12 +53,20 @@ extern struct pdic_notifier_struct pd_noti;
 extern void (*fp_select_pdo)(int num);
 #if defined(CONFIG_PDIC_PD30)
 extern int (*fp_sec_pd_select_pps)(int num, int ppsVol, int ppsCur);
-extern int (*fp_sec_pd_get_apdo_max_current)(unsigned int *pdo_pos, unsigned int taMaxVol, unsigned int *taMaxCur);
+extern int (*fp_sec_pd_get_apdo_max_power)(unsigned int *pdo_pos, unsigned int *taMaxVol, unsigned int *taMaxCur, unsigned int *taMaxPwr);
 #endif
 
 #if defined(CONFIG_PDIC_PD30)
 static void max77705_process_pd(struct max77705_usbc_platform_data *usbc_data)
 {
+	if (usbc_data->pd_data->cc_sbu_short) {
+		pd_noti.sink_status.available_pdo_num = 1;
+		pd_noti.sink_status.power_list[1].max_current =
+			pd_noti.sink_status.power_list[1].max_current > 1800 ?
+			1800 : pd_noti.sink_status.power_list[1].max_current;
+		pd_noti.sink_status.has_apdo = false;
+	}
+
 	pr_info("%s : current_pdo_num(%d), available_pdo_num(%d), has_apdo(%d)\n", __func__,
 		pd_noti.sink_status.current_pdo_num, pd_noti.sink_status.available_pdo_num, pd_noti.sink_status.has_apdo);
 
@@ -69,6 +77,13 @@ static void max77705_process_pd(struct max77705_usbc_platform_data *usbc_data)
 static void max77705_process_pd(struct max77705_usbc_platform_data *usbc_data)
 {
 	int i;
+
+	if (usbc_data->pd_data->cc_sbu_short) {
+		pd_noti.sink_status.available_pdo_num = 1;
+		pd_noti.sink_status.power_list[1].max_current =
+			pd_noti.sink_status.power_list[1].max_current > 1800 ?
+			1800 : pd_noti.sink_status.power_list[1].max_current;
+	}
 
 	pr_info("%s : CURRENT PDO NUM(%d), available_pdo_num[%d]",
 		__func__, pd_noti.sink_status.current_pdo_num,
@@ -249,37 +264,47 @@ int max77705_select_pps(int num, int ppsVol, int ppsCur)
 	return 0;
 }
 
-int max77705_get_apdo_max_current(unsigned int *pdo_pos, unsigned int taMaxVol, unsigned int *taMaxCur)
+int max77705_get_apdo_max_power(unsigned int *pdo_pos, unsigned int *taMaxVol, unsigned int *taMaxCur, unsigned int *taMaxPwr)
 {
 	int i;
 	int ret = 0;
-	int max_current = 0;
+	int max_current = 0, max_voltage = 0, max_power = 0;
 
 	if (!pd_noti.sink_status.has_apdo) {
 		pr_info("%s: pd don't have apdo\n", __func__);
 		return -1;
 	}
 
+	/* First, get TA maximum power from the fixed PDO */
+	for (i = 1; i <= pd_noti.sink_status.available_pdo_num; i++) {
+		if (!(pd_noti.sink_status.power_list[i].apdo)) {
+			max_voltage = pd_noti.sink_status.power_list[i].max_voltage;
+			max_current = pd_noti.sink_status.power_list[i].max_current;
+			max_power = max_voltage*max_current;	/* uW */
+			*taMaxPwr = max_power;	/* mW */
+		}
+	}
+
 	if (*pdo_pos == 0) {
 		/* Get the proper PDO */
-		for (i = 1; i <= pd_noti.sink_status.available_pdo_num; i++) {
-			if (pd_noti.sink_status.power_list[i].apdo) {
-				if (pd_noti.sink_status.power_list[i].max_voltage >= taMaxVol) {
-					*pdo_pos = i;
-					max_current = pd_noti.sink_status.power_list[i].max_current;
-					if (*taMaxCur > max_current) {
-						*taMaxCur = max_current;
+		for (*taMaxVol; *taMaxVol >= 9800; *taMaxVol /= 2) {
+			for (i = 1; i <= pd_noti.sink_status.available_pdo_num; i++) {
+				if (pd_noti.sink_status.power_list[i].apdo) {
+					if (pd_noti.sink_status.power_list[i].max_voltage >= *taMaxVol) {
+						*pdo_pos = i;
+						*taMaxVol = pd_noti.sink_status.power_list[i].max_voltage;
+						*taMaxCur = pd_noti.sink_status.power_list[i].max_current;
+						break;
 					}
-					break;
-				} else {
-					*pdo_pos = 0;
 				}
 			}
+			if (*pdo_pos)
+				break;
 		}
 
 		if (*pdo_pos == 0) {
 			pr_info("mv (%d) and ma (%d) out of range of APDO\n",
-				taMaxVol, *taMaxCur);
+				*taMaxVol, *taMaxCur);
 			ret = -EINVAL;
 		}	
 	} else {
@@ -288,12 +313,12 @@ int max77705_get_apdo_max_current(unsigned int *pdo_pos, unsigned int taMaxVol, 
 	}
 
 	if (!ret)
-		max77705_set_enable_pps(true, taMaxVol, *taMaxCur);
+		max77705_set_enable_pps(true, *taMaxVol, *taMaxCur);
 	else
 		max77705_set_enable_pps(false, 0, 0);
 
-	pr_info(" %s : *pdo_pos(%d), taMaxVol(%d), *maxCur(%d)\n",
-		__func__, *pdo_pos, taMaxVol, *taMaxCur);
+	pr_info(" %s : *pdo_pos(%d), *taMaxVol(%d), *maxCur(%d), *maxPwr(%d)\n",
+		__func__, *pdo_pos, *taMaxVol, *taMaxCur, *taMaxPwr);
 		
 	return ret;
 }
@@ -696,10 +721,12 @@ void max77705_detach_pd(struct max77705_usbc_platform_data *usbc_data)
 		pd_noti.sink_status.pps_current = 0;
 		pd_noti.sink_status.request_apdo = false;
 		pd_noti.sink_status.has_apdo = false;
+		max77705_set_enable_pps(false, 0, 0);
 #endif
 		pd_noti.event = PDIC_NOTIFY_EVENT_DETACH;
 		usbc_data->pd_data->psrdy_received = false;
 		usbc_data->pd_data->pdo_list = false;
+		usbc_data->pd_data->cc_sbu_short = false;
 		max77705_ccic_event_work(usbc_data, CCIC_NOTIFY_DEV_BATTERY,
 			CCIC_NOTIFY_ID_POWER_STATUS, 0/*attach*/, 0, 0);
 	}
@@ -717,6 +744,7 @@ static void max77705_notify_prswap(struct max77705_usbc_platform_data *usbc_data
 		pd_noti.sink_status.current_pdo_num = 0;
 		usbc_data->pd_data->psrdy_received = false;
 		usbc_data->pd_data->pdo_list = false;
+		usbc_data->pd_data->cc_sbu_short = false;
 		max77705_ccic_event_work(usbc_data, CCIC_NOTIFY_DEV_BATTERY,
 			CCIC_NOTIFY_ID_POWER_STATUS, 0/*attach*/, 0, 0);
 		break;
@@ -1053,7 +1081,7 @@ static irqreturn_t max77705_psrdy_irq(int irq, void *data)
 	typec_set_pwr_opmode(usbc_data->port, mode);
 #endif
 
-	if (usbc_data->pd_data->cc_status == CC_SNK) {
+	if (usbc_data->pd_data->cc_status == CC_SNK && psrdy_received) {
 		max77705_check_pdo(usbc_data);
 		usbc_data->pd_data->psrdy_received = true;
 	}
@@ -1158,6 +1186,22 @@ static irqreturn_t max77705_ssacc_irq(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+static void max77705_check_cc_sbu_short(void *data)
+{
+	u8 cc_status1 = 0;
+
+	struct max77705_usbc_platform_data *usbc_data = data;
+	struct max77705_pd_data *pd_data = usbc_data->pd_data;
+
+	max77705_read_reg(usbc_data->muic, REG_CC_STATUS1, &cc_status1);
+	/* 0b01: CC-5V, 0b10: SBU-5V, 0b11: SBU-GND Short */
+	cc_status1 = (cc_status1 & BIT_CCSBUSHORT) >> FFS(BIT_CCSBUSHORT);
+	if (cc_status1)
+		pd_data->cc_sbu_short = true;
+
+	msg_maxim("%s cc_status1 : %x, cc_sbu_short : %d\n", __func__, cc_status1, pd_data->cc_sbu_short);
+}
+
 static u8 max77705_check_rid(void *data)
 {
 	u8 fct_id = 0;
@@ -1205,11 +1249,12 @@ int max77705_pd_init(struct max77705_usbc_platform_data *usbc_data)
 	pd_noti.event = PDIC_NOTIFY_EVENT_DETACH;
 	pd_data->pdo_list = false;
 	pd_data->psrdy_received = false;
+	pd_data->cc_sbu_short = false;
 
 	fp_select_pdo = max77705_select_pdo;
 #if defined(CONFIG_PDIC_PD30)
 	fp_sec_pd_select_pps = max77705_select_pps;
-	fp_sec_pd_get_apdo_max_current = max77705_get_apdo_max_current;
+	fp_sec_pd_get_apdo_max_power = max77705_get_apdo_max_power;
 #endif
 
 	wake_lock_init(&pd_data->pdmsg_wake_lock, WAKE_LOCK_SUSPEND,
@@ -1284,6 +1329,7 @@ int max77705_pd_init(struct max77705_usbc_platform_data *usbc_data)
 	max77705_set_fw_noautoibus(MAX77705_AUTOIBUS_AT_OFF);
 	/* check CC Pin state for cable attach booting scenario */
 	max77705_datarole_irq_handler(usbc_data, CCIC_IRQ_INIT_DETECT);
+	max77705_check_cc_sbu_short(usbc_data);
 
 	msg_maxim(" OUT");
 	return 0;

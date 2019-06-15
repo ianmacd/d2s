@@ -698,6 +698,7 @@ int32_t iva_mcu_exit(struct iva_dev_data *iva)
 #if defined(CONFIG_SOC_EXYNOS9820)
 #ifdef MCU_IVA_QACTIVE_HOLD
 	iva_pmu_ctrl(iva, pmu_ctrl_qactive, false);
+	iva_pmu_show_qactive_status(iva);
 #endif
 #endif
 	dev_dbg(iva->dev, "%s() mcu exited(0x%lx) successfully\n",

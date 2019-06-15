@@ -21,6 +21,8 @@ source "drivers/block/Kconfig"
 
 source "drivers/nvme/Kconfig"
 
+source "drivers/mcps/Kconfig"
+
 # misc before ide - BLK_DEV_SGIIOC4 depends on SGI_IOC4
 
 source "drivers/misc/Kconfig"

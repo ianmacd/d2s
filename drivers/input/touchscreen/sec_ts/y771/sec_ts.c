@@ -2834,6 +2834,8 @@ static int sec_ts_input_open(struct input_dev *dev)
 	if (ts->fix_active_mode)
 		sec_ts_fix_tmode(ts, TOUCH_SYSTEM_MODE_TOUCH, TOUCH_MODE_STATE_TOUCH);
 
+	sec_ts_set_temp(ts);
+
 	mutex_unlock(&ts->modechange);
 
 	cancel_delayed_work(&ts->work_print_info);
@@ -2866,6 +2868,9 @@ static void sec_ts_input_close(struct input_dev *dev)
 	sec_ts_print_info(ts);
 #ifdef CONFIG_INPUT_SEC_SECURE_TOUCH
 	secure_touch_stop(ts, 1);
+#endif
+#ifdef CONFIG_SAMSUNG_TUI
+	stui_cancel_session();
 #endif
 
 #ifdef USE_POWER_RESET_WORK

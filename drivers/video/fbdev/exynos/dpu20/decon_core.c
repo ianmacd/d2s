@@ -52,9 +52,6 @@
 #ifdef CONFIG_SEC_DEBUG
 #include <linux/sec_debug.h>
 #endif
-#ifdef CONFIG_SAMSUNG_TUI
-#include "stui_inf.h"
-#endif
 
 #include "decon.h"
 #include "dsim.h"
@@ -127,8 +124,8 @@ void tracing_mark_write(struct decon_device *decon, char id, char *str1, int val
 		decon_err("%s:argument fail\n", __func__);
 		return;
 	}
-	trace_puts(buf);
 
+	trace_printk(buf);
 }
 
 static void decon_dump_using_dpp(struct decon_device *decon)
@@ -948,12 +945,8 @@ static int decon_disable(struct decon_device *decon)
 		goto out;
 	}
 
-	if (decon->state == DECON_STATE_TUI) {
-#ifdef CONFIG_SAMSUNG_TUI
-		stui_cancel_session();
-#endif
+	if (decon->state == DECON_STATE_TUI)
 		_decon_tui_protection(false);
-	}
 
 	DPU_EVENT_LOG(DPU_EVT_BLANK, &decon->sd, ktime_set(0, 0));
 	decon_info("decon-%d %s +\n", decon->id, __func__);

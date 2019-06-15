@@ -20,6 +20,7 @@
 #define MAX_MSI_NUM	(16)
 
 extern int s5100pcie_init(int ch_num);
+extern void first_save_s5100_status(void);
 extern int exynos_pcie_host_v1_register_event(struct exynos_pcie_register_event *reg);
 extern void exynos_pcie_host_v1_register_dump(int ch_num);
 
@@ -51,7 +52,7 @@ extern int exynos_pcie_host_v1_l1ss_ctrl(int enable, int id);
 extern int pcie_iommu_map(int ch_num, unsigned long iova, phys_addr_t paddr,
 				size_t size, int prot);
 
-#define AUTOSUSPEND_TIMEOUT	200
+#define AUTOSUSPEND_TIMEOUT	50
 
 int s5100pcie_request_msi_int(int int_num);
 void __iomem *s5100pcie_get_doorbell_address(void);

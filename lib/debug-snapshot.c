@@ -792,6 +792,8 @@ static int __init dbg_snapshot_init_value(void)
 
 	dbg_snapshot_scratch_reg(DSS_SIGN_SCRATCH);
 
+	dbg_snapshot_set_sjtag_status();
+
 	/* copy linux_banner, physical address of
 	 * kernel log / platform log / kevents to DSS header */
 	strncpy(dbg_snapshot_get_base_vaddr() + DSS_OFFSET_LINUX_BANNER,

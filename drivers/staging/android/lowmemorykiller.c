@@ -163,6 +163,8 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 				total_swapcache_pages();
 	unsigned long nr_rbin_free, nr_rbin_pool, nr_rbin_alloc, nr_rbin_file;
 	static DEFINE_RATELIMIT_STATE(lmk_rs, DEFAULT_RATELIMIT_INTERVAL, 1);
+	unsigned long nr_cma_free;
+	int migratetype;
 #if defined(CONFIG_SWAP)
 	unsigned long swap_orig_nrpages;
 	unsigned long swap_comp_nrpages;
@@ -172,6 +174,11 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 	swap_orig_nrpages = get_swap_orig_data_nrpages();
 	swap_comp_nrpages = get_swap_comp_pool_nrpages();
 #endif
+	nr_cma_free = global_zone_page_state(NR_FREE_CMA_PAGES);
+	migratetype = gfpflags_to_migratetype(sc->gfp_mask);
+	if (!((migratetype == MIGRATE_MOVABLE) &&
+		((sc->gfp_mask & GFP_HIGHUSER_MOVABLE) == GFP_HIGHUSER_MOVABLE)))
+		other_free -= nr_cma_free;
 
 	if ((sc->gfp_mask & __GFP_RBIN) != __GFP_RBIN) {
 		nr_rbin_free = global_zone_page_state(NR_FREE_RBIN_PAGES);

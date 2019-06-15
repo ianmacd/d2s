@@ -152,8 +152,8 @@
 #define FIMC_IS_MAX_TUNNING_BUFFER_SIZE (15 * 1024)
 
 #if defined(CAMERA_REAR_TOF_CAL) || defined(CAMERA_FRONT_TOF_CAL)
-#define FIMC_IS_TOF_CAL_SIZE_LEN	4
-#define FIMC_IS_TOF_CAL_SIZE_ONCE	4096
+#define FIMC_IS_TOF_CAL_SIZE_ONCE	4095
+#define FIMC_IS_TOF_CAL_CAL_RESULT_OK	0x11
 #endif
 
 #define FROM_VERSION_V002 '2'
@@ -223,6 +223,10 @@ struct fimc_is_rom_info {
 	u32		rom_dualcal_slave0_tilt_list_len;
 	u32		rom_dualcal_slave1_tilt_list[FIMC_IS_ROM_DUAL_TILT_MAX_LIST];
 	u32		rom_dualcal_slave1_tilt_list_len;
+	u32		rom_dualcal_slave2_tilt_list[FIMC_IS_ROM_DUAL_TILT_MAX_LIST];
+	u32		rom_dualcal_slave2_tilt_list_len;
+	u32		rom_dualcal_slave3_tilt_list[FIMC_IS_ROM_DUAL_TILT_MAX_LIST];
+	u32		rom_dualcal_slave3_tilt_list_len;
 	u32		rom_ois_list[FIMC_IS_ROM_OIS_MAX_LIST];
 	u32		rom_ois_list_len;
 
@@ -255,10 +259,13 @@ struct fimc_is_rom_info {
 	int32_t		rom_dualcal_slave0_size;
 	int32_t		rom_dualcal_slave1_start_addr;
 	int32_t		rom_dualcal_slave1_size;
+	int32_t		rom_dualcal_slave2_start_addr;
+	int32_t		rom_dualcal_slave2_size;
 
 	int32_t		rom_tof_cal_size_addr;
 	int32_t		rom_tof_cal_start_addr;
 	int32_t		rom_tof_cal_uid_addr;
+	int32_t		rom_tof_cal_result_addr;
 
 	u32		bin_start_addr;		/* DDK */
 	u32		bin_end_addr;
@@ -296,7 +303,6 @@ struct fimc_is_rom_info {
 	char		rom_sensor_id[FIMC_IS_SENSOR_ID_SIZE + 1];
 	char		rom_sensor2_id[FIMC_IS_SENSOR_ID_SIZE + 1];
 	u8		rom_module_id[FIMC_IS_MODULE_ID_SIZE + 1];
-	u8		rom_front_module_id[FIMC_IS_MODULE_ID_SIZE + 1];
 	unsigned long		fw_size;
 #ifdef USE_RTA_BINARY
 	unsigned long		rta_fw_size;

@@ -90,6 +90,7 @@ enum power_supply_ext_property {
 	POWER_SUPPLY_EXT_PROP_AUTO_SHIPMODE_CONTROL,
 	POWER_SUPPLY_EXT_PROP_WIRELESS_TIMER_ON,
 	POWER_SUPPLY_EXT_PROP_CALL_EVENT,
+	POWER_SUPPLY_EXT_PROP_CURRENT_EVENT,
 #if defined(CONFIG_BATTERY_SAMSUNG_MHS)
 	POWER_SUPPLY_EXT_PROP_CHARGE_PORT,
 #endif
@@ -102,8 +103,11 @@ enum power_supply_ext_property {
 	POWER_SUPPLY_EXT_PROP_CHARGING_ENABLED_DC,
 	POWER_SUPPLY_EXT_PROP_DIRECT_DONE,
 	POWER_SUPPLY_EXT_PROP_DIRECT_FIXED_PDO,
-	POWER_SUPPLY_EXT_PROP_DIRECT_INIT_INFO,
 	POWER_SUPPLY_EXT_PROP_DIRECT_WDT_CONTROL,
+	POWER_SUPPLY_EXT_PROP_DIRECT_VOLTAGE_MAX,
+	POWER_SUPPLY_EXT_PROP_DIRECT_CURRENT_MAX,
+	POWER_SUPPLY_EXT_PROP_DIRECT_FLOAT_MAX,
+	POWER_SUPPLY_EXT_PROP_DIRECT_ADC_CTRL,
 #endif
 };
 
@@ -123,6 +127,7 @@ enum sec_battery_usb_conf {
 enum power_supply_ext_health {
 	POWER_SUPPLY_HEALTH_VSYS_OVP = POWER_SUPPLY_HEALTH_MAX,
 	POWER_SUPPLY_HEALTH_VBAT_OVP,
+	POWER_SUPPLY_HEALTH_DC_ERR,
 };
 
 enum sec_battery_cable {
@@ -810,14 +815,18 @@ struct sec_battery_platform_data {
 	int swelling_low_temp_recov_1st;
 	int swelling_low_temp_block_2nd;
 	int swelling_low_temp_recov_2nd;
+	int swelling_low_temp_block_3rd;
+	int swelling_low_temp_recov_3rd;
 	unsigned int swelling_low_temp_current;
 	unsigned int swelling_low_temp_current_2nd;
+	unsigned int swelling_low_temp_current_3rd;
 	unsigned int swelling_low_temp_topoff;
 	unsigned int swelling_high_temp_current;
 	unsigned int swelling_high_temp_topoff;
 	unsigned int swelling_wc_high_temp_current;
 	unsigned int swelling_wc_low_temp_current;
 	unsigned int swelling_wc_low_temp_current_2nd;
+	unsigned int swelling_wc_low_temp_current_3rd;
 
 	unsigned int swelling_normal_float_voltage;
 	unsigned int swelling_drop_float_voltage;
@@ -963,6 +972,7 @@ struct sec_battery_platform_data {
 	unsigned int sleep_mode_limit_current;
 	unsigned int wc_full_input_limit_current;
 	unsigned int max_charging_current;
+	unsigned int max_charging_charge_power;
 	int mix_high_temp;
 	int mix_high_chg_temp;
 	int mix_high_temp_recovery;
@@ -1138,6 +1148,8 @@ struct sec_charger_platform_data {
 	int irq_gpio;
 	int chg_irq;
 	unsigned long chg_irq_attr;
+	unsigned int chg_ocp_current;
+	unsigned int chg_ocp_dtc;
 
 	/* otg_en setting */
 	int otg_en;
@@ -1275,7 +1287,6 @@ static inline struct power_supply *get_power_supply_by_name(char *name)
 	cable_type == SEC_BATTERY_CABLE_WIRELESS_VEHICLE || \
 	cable_type == SEC_BATTERY_CABLE_PREPARE_WIRELESS_20 || \
 	cable_type == SEC_BATTERY_CABLE_PREPARE_WIRELESS_HV || \
-	cable_type == SEC_WIRELESS_PAD_WPC_PREPARE_DUO_HV_20 || \
 	cable_type == SEC_BATTERY_CABLE_WIRELESS_TX)
 
 #define is_wireless_type(cable_type) \

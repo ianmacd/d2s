@@ -2971,12 +2971,12 @@ int get_static_mem(int ctrl_id, void **mem, int *size) {
 
 	switch(ctrl_id) {
 	case ITF_CTRL_ID_DDK:
-		*mem = (void *)rta_static_data;
-		*size = sizeof(rta_static_data);
-		break;
-	case ITF_CTRL_ID_RTA:
 		*mem = (void *)ddk_static_data;
 		*size = sizeof(ddk_static_data);
+		break;
+	case ITF_CTRL_ID_RTA:
+		*mem = (void *)rta_static_data;
+		*size = sizeof(rta_static_data);
 		break;
 	default:
 		err("invalid itf ctrl id %d", ctrl_id);

@@ -813,6 +813,20 @@ int sensor_module_s_ctrl(struct v4l2_subdev *subdev, struct v4l2_control *ctrl)
 			goto p_err;
 		}
 		break;
+	case V4L2_CID_SENSOR_SET_FACTORY_CONTROL:
+		ret = CALL_CISOPS(&sensor_peri->cis, cis_set_factory_control, sensor_peri->subdev_cis, ctrl->value);
+		if (ret < 0) {
+			err("failed to factory control: %d\n", ctrl->value);
+			goto p_err;
+		}
+		break;
+	case V4L2_CID_SENSOR_SET_LASER_CONTORL:
+		ret = CALL_CISOPS(&sensor_peri->cis, cis_set_laser_control, sensor_peri->subdev_cis, ctrl->value);
+		if (ret < 0) {
+			err("failed to laser control: %d\n", ctrl->value);
+			goto p_err;
+		}
+		break;
 	default:
 		err("err!!! Unknown CID(%#x)", ctrl->id);
 		ret = -EINVAL;

@@ -23,7 +23,9 @@
 #include <linux/iio/buffer_impl.h>
 #include <linux/iio/types.h>
 #include <linux/iio/kfifo_buf.h>
-#if defined(CONFIG_BATTERY_SAMSUNG_V2)
+#if defined(CONFIG_BATTERY_SAMSUNG_V3)
+#include "../../battery/v3/include/sec_charging_common.h"
+#elif defined(CONFIG_BATTERY_SAMSUNG_V2)
 #include "../../battery_v2/include/sec_charging_common.h"
 #else
 #include <linux/battery/sec_charging_common.h>

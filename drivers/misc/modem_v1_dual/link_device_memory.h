@@ -39,6 +39,8 @@
 #include "include/circ_queue.h"
 #include "include/sbd.h"
 #include "include/sipc5.h"
+#include "link_rx_dit.h"
+#include "link_rx_pktproc.h"
 
 #ifdef GROUP_MEM_TYPE
 
@@ -598,6 +600,11 @@ struct mem_link_device {
 	struct shmem_ulpath_table ulpath;
 #endif
 #endif
+
+	int (*pass_skb_to_net)(struct mem_link_device *mld, struct sk_buff *skb);
+
+	struct dit_adaptor dit;
+	struct pktproc_adaptor pktproc;
 };
 
 #define to_mem_link_device(ld) \
