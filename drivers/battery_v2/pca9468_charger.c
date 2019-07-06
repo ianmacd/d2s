@@ -1461,6 +1461,7 @@ static int pca9468_set_new_vfloat(struct pca9468_charger *pca9468)
 					ret = pca9468_set_vfloat(pca9468, pca9468->pdata->v_float);
 					if (ret < 0)
 						goto error;
+					pca9468->pdata->iin_cfg = pca9468->iin_cc;	/* save the current iin_cc in iin_cfg */
 					/* Set IIN_CFG to the current IIN_CC */
 					pca9468->pdata->iin_cfg = MIN(pca9468->pdata->iin_cfg, pca9468->ta_max_cur*pca9468->ta_mode);
 					ret = pca9468_set_input_current(pca9468, pca9468->pdata->iin_cfg);

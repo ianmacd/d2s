@@ -406,28 +406,32 @@ static int s5100pcie_probe(struct pci_dev *pdev,
 
 void print_msi_register()
 {
-	u32 msi_val;
+	u32 msi_val_50,msi_val_54, msi_val_58, msi_val_5c;
 
-	pci_read_config_dword(s5100pcie.s5100_pdev, 0x50, &msi_val);
-	mif_err("MSI Control Reg(0x50) : 0x%x\n", msi_val);
-	pci_read_config_dword(s5100pcie.s5100_pdev, 0x54, &msi_val);
-	mif_err("MSI Message Reg(0x54) : 0x%x\n", msi_val);
-	pci_read_config_dword(s5100pcie.s5100_pdev, 0x58, &msi_val);
-	mif_err("MSI MsgData Reg(0x58) : 0x%x\n", msi_val);
+	pci_read_config_dword(s5100pcie.s5100_pdev, 0x50, &msi_val_50);
+	pci_read_config_dword(s5100pcie.s5100_pdev, 0x54, &msi_val_54);
+	pci_read_config_dword(s5100pcie.s5100_pdev, 0x58, &msi_val_58);
+	pci_read_config_dword(s5100pcie.s5100_pdev, 0x5C, &msi_val_5c);
+	mif_err("MSI Control Reg(0x50): 0x%x\n", msi_val_50);
+	mif_err("MSI Addr. Reg(0x54): 0x%x\n", msi_val_54);
+	mif_err("MSI Data Reg(0x58 (& 0x5C)): 0x%x (& 0x%x)\n",
+		msi_val_58, msi_val_5c);
 
-	if (msi_val == 0x0) {
-		mif_err("MSI Message Reg == 0x0 - set MSI again!!!\n");
+	if ((msi_val_58 == 0x0) && (msi_val_5c == 0x0)) {
+		mif_err("MSI Data Reg(0x58 (& 0x5C)) == 0x0: set MSI again!!!\n");
 		pci_restore_msi_state(s5100pcie.s5100_pdev);
+		pci_write_config_dword(s5100pcie.s5100_pdev, 0x58, 0x4);
 
-		mif_err("exynos_pcie_msi_init_ext is not implemented\n");
+		/* mif_err("exynos_pcie_msi_init_ext is not implemented\n"); */
 		/* exynos_pcie_msi_init_ext(s5100pcie.pcie_channel_num); */
 
-		pci_read_config_dword(s5100pcie.s5100_pdev, 0x50, &msi_val);
-		mif_err("Recheck - MSI Control Reg : 0x%x (0x50)\n", msi_val);
-		pci_read_config_dword(s5100pcie.s5100_pdev, 0x54, &msi_val);
-		mif_err("Recheck - MSI Message Reg : 0x%x (0x54)\n", msi_val);
-		pci_read_config_dword(s5100pcie.s5100_pdev, 0x58, &msi_val);
-		mif_err("Recheck - MSI MsgData Reg : 0x%x (0x58)\n", msi_val);
+		pci_read_config_dword(s5100pcie.s5100_pdev, 0x50, &msi_val_50);
+		pci_read_config_dword(s5100pcie.s5100_pdev, 0x54, &msi_val_54);
+		pci_read_config_dword(s5100pcie.s5100_pdev, 0x58, &msi_val_58);
+		pci_read_config_dword(s5100pcie.s5100_pdev, 0x5C, &msi_val_5c);
+		mif_err("MSI config.: (0x50=0x%x) (0x54=0x%x) (0x58=0x%x)"
+			"(& 0x5C=0x%x))\n",
+			msi_val_50, msi_val_54, msi_val_58, msi_val_5c);
 	}
 }
 
