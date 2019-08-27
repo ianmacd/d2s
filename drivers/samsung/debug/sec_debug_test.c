@@ -752,10 +752,11 @@ static void simulate_WRITE_RO(char *arg)
 // Write to function addr will triger a warning by JOPP compiler
 #ifdef CONFIG_RKP_CFP_JOPP
 	ptr = (unsigned long *)__start_rodata;
+	*ptr ^= 0x12345678;
 #else
 	ptr = (unsigned long *)simulate_WRITE_RO;
 #endif
-	*ptr ^= 0x12345678;
+	*ptr ^= 0x0;
 }
 
 #define BUFFER_SIZE SZ_1K
@@ -839,7 +840,7 @@ static void simulate_IRQ_STORM(char *arg)
 		else
 			pr_crit("%s : wrong irq number (%d)\n", __func__, (unsigned int)irq);
 	} else {
-		for_each_irq_nr(i) {			
+		for_each_irq_nr(i) {
 			struct irq_desc *desc = irq_to_desc(i);
 
 			if (desc && desc->action && desc->action->name)
@@ -881,18 +882,18 @@ static void simulate_SYNC_IRQ_LOCKUP(char *arg)
 			struct irq_desc *desc = irq_to_desc(i);
 
 			if (desc && desc->action && desc->action->thread_fn)
-				desc->action->thread_fn = dummy_wait_for_completion_irq_handler;	
+				desc->action->thread_fn = dummy_wait_for_completion_irq_handler;
 		}
 		else {
 			pr_crit("%s : wrong irq number (%d)\n", __func__, (unsigned int)irq);
 		}
 	} else {
-		for_each_irq_nr(i) {			
+		for_each_irq_nr(i) {
 			struct irq_desc *desc = irq_to_desc(i);
 
 			if (desc && desc->action && desc->action->name && desc->action->thread_fn)
 				if (!strcmp(desc->action->name, "sec_ts")) {
-					desc->action->thread_fn = dummy_wait_for_completion_irq_handler;	
+					desc->action->thread_fn = dummy_wait_for_completion_irq_handler;
 					break;
 				}
 		}
