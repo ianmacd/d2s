@@ -40,6 +40,12 @@
 #include <linux/ccic/max77705_alternate.h>
 #include <linux/of.h>
 
+#if defined(CONFIG_BATTERY_SAMSUNG_V2)
+#include "../../battery_v2/include/sec_charging_common.h"
+#else
+#include <linux/battery/sec_charging_common.h>
+#endif
+
 /* dwc3 irq storm patch */
 /* need to check dwc3 link state during dcd time out case */
 extern int dwc3_gadget_get_cmply_link_state_wrapper(void);
@@ -125,8 +131,10 @@ static int manager_notifier_notify(void *data)
 		if (manager_noti.sub1 != typec_manager.wVbus_det) {
 			typec_manager.wVbus_det = manager_noti.sub1;
 #if defined(CONFIG_USB_HW_PARAM)
-			typec_manager.waterChg_count += manager_noti.sub1;
-			wVbus_time_update(typec_manager.wVbus_det);
+			if (typec_manager.water_det) {
+				typec_manager.waterChg_count += manager_noti.sub1;
+				wVbus_time_update(typec_manager.wVbus_det);
+			}
 #endif
 		} else {
 			return 0;
@@ -434,6 +442,56 @@ void wVbus_time_update(int mode)
 }
 #endif
 
+static int manager_check_vbus_by_otg(void)
+{
+    union power_supply_propval val;
+	int otg_power = 0;
+#ifdef MANAGER_DEBUG
+	unsigned long cur_stamp;
+	int otg_power_time = 0;
+#endif
+
+    psy_do_property("otg", get,
+            POWER_SUPPLY_PROP_ONLINE, val);
+	otg_power = val.intval;
+
+	if (typec_manager.otg_stamp) {
+#ifdef MANAGER_DEBUG
+		cur_stamp = jiffies;
+		otg_power_time = time_before(cur_stamp, typec_manager.otg_stamp+msecs_to_jiffies(300));
+		pr_info("%s [OTG Accessory VBUS] duration-time=%u(ms), time_before(%d)\n", __func__,
+			jiffies_to_msecs(cur_stamp-typec_manager.otg_stamp), otg_power_time);
+		if (otg_power_time) {
+			typec_manager.vbus_by_otg_detection = 1;
+		}
+#else
+		if (time_before(jiffies, typec_manager.otg_stamp+msecs_to_jiffies(300)))
+			typec_manager.vbus_by_otg_detection = 1;
+#endif
+		typec_manager.otg_stamp = 0;
+	}
+
+	otg_power |= typec_manager.vbus_by_otg_detection;
+
+    pr_info("%s otg power? %d (otg?%d, vbusTimeCheck?%d)\n", __func__,
+			otg_power, val.intval, typec_manager.vbus_by_otg_detection);
+    return otg_power;
+}
+
+static int manager_get_otg_power_mode(void)
+{
+    union power_supply_propval val;
+	int otg_power = 0;
+
+    psy_do_property("otg", get,
+            POWER_SUPPLY_PROP_ONLINE, val);
+	otg_power = val.intval | typec_manager.vbus_by_otg_detection;;
+
+    pr_info("%s otg power? %d (otg?%d, vbusTimeCheck?%d)\n", __func__,
+			otg_power, val.intval, typec_manager.vbus_by_otg_detection);
+    return otg_power;
+}
+
 void set_usb_enable_state(void)
 {
 	if (!typec_manager.usb_enable_state) {
@@ -644,8 +702,9 @@ static int manager_handle_ccic_notification(struct notifier_block *nb,
 				if(typec_manager.ccic_attach_state == CCIC_NOTIFY_ATTACH){
 					pr_info("%s: CCIC_NOTIFY_ATTACH\n", __func__);
 					typec_manager.water_det = 0;
-					typec_manager.water_cable_det = 0;
 					typec_manager.pd_con_state = 0;
+					if(p_noti.sub2)
+						typec_manager.otg_stamp = jiffies;
 				}
 			}
 
@@ -691,9 +750,12 @@ static int manager_handle_ccic_notification(struct notifier_block *nb,
 #endif
 
 #if defined(CONFIG_VBUS_NOTIFIER)
-				if (typec_manager.vbus_state == STATUS_VBUS_HIGH)
+				mutex_lock(&typec_manager.mo_lock);
+				if (typec_manager.vbus_state == STATUS_VBUS_HIGH
+						&& !manager_get_otg_power_mode())
 					manager_event_work(p_noti.src, CCIC_NOTIFY_DEV_BATTERY,
 						p_noti.id, p_noti.sub1, p_noti.sub2, typec_manager.water_cable_type);
+				mutex_unlock(&typec_manager.mo_lock);
 #endif
 			}
 		} else {
@@ -715,11 +777,17 @@ static int manager_handle_ccic_notification(struct notifier_block *nb,
 		if (!typec_manager.water_det)
 			return 0;
 
-		if (p_noti.sub1 != typec_manager.water_cable_det) {
-			typec_manager.water_cable_det = p_noti.sub1;
+		manager_event_work(p_noti.src, CCIC_NOTIFY_DEV_MUIC,
+			p_noti.id, p_noti.sub1, p_noti.sub2, p_noti.sub3);
+
+		if (p_noti.sub1) {
 			/* Send water cable event to battery */
 			manager_event_work(p_noti.src, CCIC_NOTIFY_DEV_BATTERY,
-					CCIC_NOTIFY_ID_WATER, p_noti.sub1, p_noti.sub2, typec_manager.water_cable_type);
+					CCIC_NOTIFY_ID_WATER, CCIC_NOTIFY_ATTACH, p_noti.sub2, typec_manager.water_cable_type);
+
+			/* make detach event like hiccup case*/
+			manager_event_work(p_noti.src, CCIC_NOTIFY_DEV_BATTERY,
+					CCIC_NOTIFY_ID_WATER, CCIC_NOTIFY_DETACH, p_noti.sub2, typec_manager.water_cable_type);		
 		}
 		return 0;
 	case CCIC_NOTIFY_ID_INITIAL:
@@ -882,12 +950,12 @@ static int manager_handle_muic_notification(struct notifier_block *nb,
 	if(!p_noti.attach)
 		typec_manager.cable_type = MANAGER_NOTIFY_MUIC_NONE;
 
-	if (!(p_noti.attach) && typec_manager.ccic_attach_state && typec_manager.pd_con_state) {
+	if (!(p_noti.attach) && typec_manager.pd_con_state &&
+			p_noti.cable_type != typec_manager.water_cable_type) {
 		pr_info("%s: Don't send the MUIC detach event when the PD charger is connected\n", __func__);
-	} else {
+	} else
 		manager_event_work(CCIC_NOTIFY_DEV_MUIC, CCIC_NOTIFY_DEV_BATTERY,
 			p_noti.id, p_noti.attach, p_noti.rprd, p_noti.cable_type);
-	}
 
 	return 0;
 }
@@ -898,6 +966,7 @@ static int manager_handle_vbus_notification(struct notifier_block *nb,
 {
 	vbus_status_t vbus_type = *(vbus_status_t *)data;
 
+	mutex_lock(&typec_manager.mo_lock);
 	pr_info("%s: cmd=%lu, vbus_type=%s, WATER DET=%d ATTACH=%s (%d)\n", __func__,
 		action, vbus_type == STATUS_VBUS_HIGH ? "HIGH" : "LOW", typec_manager.water_det,
 		typec_manager.ccic_attach_state == CCIC_NOTIFY_ATTACH ? "ATTACH":"DETACH",
@@ -907,22 +976,22 @@ static int manager_handle_vbus_notification(struct notifier_block *nb,
 
 	switch (vbus_type) {
 	case STATUS_VBUS_HIGH:
-		if (typec_manager.water_det) {
+		if (!manager_check_vbus_by_otg() && typec_manager.water_det)
 			manager_event_work(CCIC_NOTIFY_DEV_MANAGER, CCIC_NOTIFY_DEV_BATTERY,
 				CCIC_NOTIFY_ID_WATER, CCIC_NOTIFY_ATTACH, 0, typec_manager.water_cable_type);
-		}
 		break;
 	case STATUS_VBUS_LOW:
-		if (typec_manager.water_det) {
+		typec_manager.vbus_by_otg_detection = 0;
+		if (typec_manager.wVbus_det)
 			manager_event_work(CCIC_NOTIFY_DEV_MANAGER, CCIC_NOTIFY_DEV_BATTERY,
 				CCIC_NOTIFY_ID_ATTACH, CCIC_NOTIFY_DETACH, 0, typec_manager.water_cable_type);
-		}
 		manager_handle_muic_event(EVENT_LOAD);
 		break;
 	default:
 		break;
 	}
 
+	mutex_unlock(&typec_manager.mo_lock);
 	return 0;
 }
 #endif
@@ -966,7 +1035,6 @@ int manager_notifier_register(struct notifier_block *nb, notifier_fn_t notifier,
 		m_noti.pd = typec_manager.pd;
 		if(typec_manager.water_det) {
 			if (typec_manager.muic_attach_state
-				|| typec_manager.water_cable_det
 #if defined(CONFIG_VBUS_NOTIFIER)
 				|| typec_manager.vbus_state == STATUS_VBUS_HIGH
 #endif
@@ -1155,8 +1223,9 @@ static int manager_notifier_init(void)
 #endif
 	typec_manager.cable_type = MANAGER_NOTIFY_MUIC_NONE;
 	typec_manager.usb_enum_state = 0;
+	typec_manager.otg_stamp = 0;
+	typec_manager.vbus_by_otg_detection = 0;
 	typec_manager.water_det = 0;
-	typec_manager.water_cable_det = 0;
 	typec_manager.wVbus_det = 0;
 #if defined(CONFIG_USB_HW_PARAM)
 	typec_manager.water_count =0;
@@ -1218,6 +1287,7 @@ static int manager_notifier_init(void)
 	INIT_DELAYED_WORK(&typec_manager.muic_event_work,
 		manager_muic_event_work);
 #endif
+	mutex_init(&typec_manager.mo_lock);
 
 	// Register manager handler to ccic notifier block list
 #if defined(CONFIG_VBUS_NOTIFIER)
@@ -1261,6 +1331,7 @@ out:
 static void __exit manager_notifier_exit(void)
 {
 	pr_info("%s exit\n", __func__);
+	mutex_destroy(&typec_manager.mo_lock);
 #if defined(CONFIG_VBUS_NOTIFIER)
 	vbus_notifier_unregister(&typec_manager.vbus_nb);
 #endif

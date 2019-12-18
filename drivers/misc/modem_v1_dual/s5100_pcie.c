@@ -78,8 +78,6 @@ inline int s5100pcie_send_doorbell_int(int int_num)
 	int cnt = 0;
 	u16 cmd;
 
-	s5100_check_doorbell_ready();
-
 	if (s5100pcie.link_status == 0) {
 		mif_err_limited("Can't send Interrupt(not enabled)!!!\n");
 		return -EAGAIN;
@@ -108,7 +106,7 @@ inline int s5100pcie_send_doorbell_int(int int_num)
 
 		if (cnt >= 10) {
 			mif_err_limited("BME is not set(cnt=%d)\n", cnt);
-			return -EAGAIN;
+			return -EIO;
 		}
 	}
 
@@ -118,7 +116,7 @@ send_doorbell_again:
 	reg = ioread32(s5100pcie.doorbell_addr);
 
 	/* debugging: */
-	mif_info("DBG: s5100pcie.doorbell_addr = 0x%x - written(int_num=0x%x) read(reg=0x%x)\n", \
+	mif_debug("DBG: s5100pcie.doorbell_addr = 0x%x - written(int_num=0x%x) read(reg=0x%x)\n", \
 		s5100pcie.doorbell_addr, int_num, reg);
 
 	if (reg == 0xffffffff) {
@@ -142,7 +140,7 @@ send_doorbell_again:
 		mif_err("[Need to CHECK] Can't send doorbell int (0x%x)\n", reg);
 		exynos_pcie_host_v1_register_dump(s5100pcie.pcie_channel_num);
 
-		return -EAGAIN;
+		return -EIO;
 	}
 
 	return 0;
@@ -182,6 +180,8 @@ void first_save_s5100_status()
 
 void save_s5100_status()
 {
+	int val;
+
 	if (exynos_check_pcie_link_status(s5100pcie.pcie_channel_num) == 0) {
 		mif_err("It's not Linked - Ignore saving the s5100_status!\n");
 		return;
@@ -213,6 +213,13 @@ void save_s5100_status()
 	else
 		mif_err("MSI-DBG:AFTER: s5100pcie.pci_saved_configs is NOT NULL\n");
 	*/
+	/* check the BAR values saved */
+	pci_read_config_dword(s5100pcie.s5100_pdev, 0x10, &val);
+	mif_info("Saved BAR(0x10) : 0x%x\n", val);
+	pci_read_config_dword(s5100pcie.s5100_pdev, 0x14, &val);
+	mif_info("Saved BAR(0x14) : 0x%x\n", val);
+	pci_read_config_dword(s5100pcie.s5100_pdev, 0x18, &val);
+	mif_info("Saved BAR(0x18) : 0x%x\n", val);
 
 	disable_msi_int();
 
@@ -230,7 +237,7 @@ void save_s5100_status()
 void restore_s5100_state()
 {
 	int ret;
-	u32 val;
+	int val;
 
 	if (exynos_check_pcie_link_status(s5100pcie.pcie_channel_num) == 0) {
 		mif_err("It's not Linked - Ignore restoring the s5100_status!\n");
@@ -255,8 +262,24 @@ void restore_s5100_state()
 	pci_restore_state(s5100pcie.s5100_pdev);
 	/* DBG: mif_eff("MSI-DBG #5: after pci_restore_state()"); */
 
+	/* check the restored BAR values */
 	pci_read_config_dword(s5100pcie.s5100_pdev, 0x10, &val);
-	mif_err("BAR Restore Reg(0x10) : 0x%x\n", val);
+	pr_err("[%s] BAR0 : 0x%x\n", __func__, val);
+	val &= 0xfffffff0;      /* remove BAR space infroamtion at [3:0] */
+	if (val != 0x12d00000) { /* 0x12d00000 is pre-defined doorbell address */
+		mif_err("Restored BAR0(0x10) : 0x%x(not proper value)\n", val);
+		pci_write_config_dword(s5100pcie.s5100_pdev,
+			PCI_BASE_ADDRESS_0, 0x12D00000);
+		}
+
+	/* check the BAR values */
+	pci_read_config_dword(s5100pcie.s5100_pdev, 0x10, &val);
+	mif_info("Saved BAR(0x10) : 0x%x\n", val);
+	pci_read_config_dword(s5100pcie.s5100_pdev, 0x14, &val);
+	mif_info("Saved BAR(0x14) : 0x%x\n", val);
+	pci_read_config_dword(s5100pcie.s5100_pdev, 0x18, &val);
+	mif_info("Saved BAR(0x18) : 0x%x\n", val);
+
 
 	pci_enable_wake(s5100pcie.s5100_pdev, PCI_D0, 0);
 	/* pci_enable_wake(s5100pcie.s5100_pdev, PCI_D3hot, 0); */
@@ -268,9 +291,6 @@ void restore_s5100_state()
 	}
 	pci_set_master(s5100pcie.s5100_pdev);
 
-	s5100pcie.link_status = 1;
-	/* pci_pme_active(s5100pcie.s5100_pdev, 1); */
-
 #ifdef CONFIG_DISABLE_PCIE_CP_L1_2
 	/* Disable L1.2 after PCIe power on */
 	exynos_pcie_host_v1_l1ss_ctrl(0, PCIE_L1SS_CTRL_MODEM_IF);
@@ -278,6 +298,9 @@ void restore_s5100_state()
 	/* Enable L1.2 after PCIe power on */
 	exynos_pcie_host_v1_l1ss_ctrl(1, PCIE_L1SS_CTRL_MODEM_IF);
 #endif
+
+	s5100pcie.link_status = 1;
+	/* pci_pme_active(s5100pcie.s5100_pdev, 1); */
 }
 
 void disable_msi_int()
@@ -317,15 +340,14 @@ int s5100pcie_request_msi_int(int int_num)
 	return s5100pcie.s5100_pdev->irq;
 }
 
-extern int s5100_force_crash_exit_ext(void);
-
 static void s5100pcie_linkdown_cb(struct exynos_pcie_notify *noti)
 {
 	struct pci_dev __maybe_unused *pdev = (struct pci_dev *)noti->user;
 
 	pr_err("S5100 Link-Down notification callback function!!!\n");
 
-	s5100_force_crash_exit_ext();
+	s5100_force_crash_exit_ext(CRASH_REASON_MIF_MDM_CTRL,
+				   "PCIE link down");
 }
 
 static int s5100pcie_probe(struct pci_dev *pdev,

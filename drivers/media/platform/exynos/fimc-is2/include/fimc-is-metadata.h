@@ -44,6 +44,7 @@ struct rational {
 #define CAMERA2_MAX_AVAILABLE_MODE		21
 #define CAMERA2_MAX_FACES			16
 #define CAMERA2_MAX_VENDER_LENGTH		400
+#define CAMERA2_AWB_VENDER_LENGTH		415
 #define CAMERA2_MAX_IPC_VENDER_LENGTH		1086
 #define CAMERA2_MAX_PDAF_MULTIROI_COLUMN	13
 #define CAMERA2_MAX_PDAF_MULTIROI_ROW		9
@@ -735,6 +736,9 @@ enum aa_capture_intent {
 	AA_CAPTURE_INTENT_STILL_CAPTURE_SUPER_NIGHT_SHOT_TRIPOD,
 	AA_CAPTURE_INTENT_STILL_CAPTURE_CANCEL,
 	AA_CAPTURE_INTENT_STILL_CAPTURE_NORMAL_FLASH,
+	AA_CAPTURE_INTENT_STILL_CAPTURE_LLHDR_VEHDR_DYNAMIC_SHOT,
+	AA_CAPTURE_INTENT_STILL_CAPTURE_VENR_DYNAMIC_SHOT,
+	AA_CAPTURE_INTENT_STILL_CAPTURE_LLS_FLASH,
 };
 
 enum aa_mode {
@@ -804,6 +808,7 @@ enum aa_scene_mode {
     AA_SCENE_MODE_FAST_AE          = 134,
     AA_SCENE_MODE_ILLUMINANCE      = 135,
     AA_SCENE_MODE_SUPER_NIGHT      = 136,
+    AA_SCENE_MODE_BOKEH_VIDEO      = 137,
 };
 
 enum aa_effect_mode {
@@ -1193,7 +1198,8 @@ struct camera2_aa_dm {
 	uint32_t			vendor_luxIndex;       
 	uint32_t			vendor_luxStandard;
 	int32_t				vendor_aeStats4VO[8];
-	uint32_t			vendor_reserved[10];
+	int32_t				vendor_multiFrameEv;
+	uint32_t			vendor_reserved[9];
 
 	// For dual
 	uint32_t			vendor_wideTeleConvEv;
@@ -1541,7 +1547,7 @@ struct camera2_ae_udm {
 
 struct camera2_awb_udm {
 	uint32_t	vsLength;
-	uint32_t	vendorSpecific[CAMERA2_MAX_VENDER_LENGTH];
+	uint32_t	vendorSpecific[CAMERA2_AWB_VENDER_LENGTH];
 
 	/** vendor specific2 length */
 	uint32_t	vs2Length;

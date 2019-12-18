@@ -24,6 +24,8 @@
 				charger,dchg_min_current = <2000>;
 				charger,dchg_temp_low_threshold = <180>;
 				charger,dchg_temp_high_threshold = <410>;
+
+				charger,ta_alert_wa;
 			};
 
 			battery {
@@ -161,6 +163,8 @@
 				battery,wpc_store_lcd_on_high_temp = <360>;
 				battery,wpc_store_lcd_on_high_temp_rec = <300>;
 				battery,wpc_store_lcd_on_charging_limit_current = <400>;
+
+				battery,ta_alert_wa;
 
 				battery,sleep_mode_limit_current = <500>;
 				battery,wc_full_input_limit_current = <100>;

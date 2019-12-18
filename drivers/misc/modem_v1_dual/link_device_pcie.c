@@ -48,7 +48,7 @@
 #include "link_ctrlmsg_iosm.h"
 #include "s5100_pcie.h"
 
-extern int s5100_force_crash_exit_ext(void);
+#define MIF_TX_QUOTA 64
 
 #if !defined(CONFIG_CP_SECURE_BOOT)
 #define CRC32_XINIT 0xFFFFFFFFL		/* initial value */
@@ -301,6 +301,8 @@ static void shmem_handle_cp_crash(struct mem_link_device *mld,
 		mld->stop_pm(mld);
 #endif
 
+	set_cp_crash_link(ld->link_type);
+
 	/* Disable normal IPC */
 	set_magic(mld, MEM_CRASH_MAGIC);
 	set_access(mld, 0);
@@ -384,6 +386,7 @@ static void shmem_forced_cp_crash(struct mem_link_device *mld,
 	mld->crash_reason.owner = crash_reason_owner;
 	strlcpy(mld->crash_reason.string, crash_reason_string,
 		CRASH_REASON_SIZE);
+	set_cp_crash_link(ld->link_type);
 
 	stop_net_ifaces(ld);
 
@@ -398,12 +401,20 @@ static void shmem_forced_cp_crash(struct mem_link_device *mld,
 		      handle_no_cp_crash_ack, (unsigned long)mld);
 
 	/* Raise DUMP_NOTI GPIO to CP */
-	s5100_force_crash_exit_ext();
+	s5100_force_crash_exit_ext(crash_reason_owner, crash_reason_string);
 
 	mif_err("%s->%s: CP_CRASH_REQ by %d, %s <%pf>\n",
 				ld->name, mc->name,
 				crash_reason_owner, crash_reason_string,
 				CALLER);
+}
+
+void handle_cp_not_work(unsigned long arg)
+{
+	struct mem_link_device *mld = (struct mem_link_device *)arg;
+
+	shmem_forced_cp_crash(mld, CRASH_REASON_MIF_MDM_CTRL,
+				   "cp not working for a while");
 }
 #endif
 
@@ -517,7 +528,6 @@ static void cmd_phone_start_handler(struct mem_link_device *mld)
 		if (phone_start_count < 100) {
 			if (phone_start_count++ > 3) {
 				phone_start_count = 101;
-				set_dflags(127);
 				send_ipc_irq(mld,
 					cmd2int(phone_start_count - 100));
 				return;
@@ -737,7 +747,7 @@ static int tx_frames_to_dev(struct mem_link_device *mld,
 		mif_pkt(skbpriv(skb)->sipc_ch, "LNK-TX", skb);
 #endif
 
-		dev_kfree_skb_any(skb);
+		dev_consume_skb_any(skb);
 	}
 
 	return (ret < 0) ? ret : tx_bytes;
@@ -760,11 +770,19 @@ static enum hrtimer_restart tx_timer_func(struct hrtimer *timer)
 	need_schedule = false;
 	mask = 0;
 
-	cp_runtime_link(mc, LINK_TX_TIMER, 0);
-	spin_lock_irqsave(&mc->lock, flags);
+	if (atomic_read(&mc->pcie_pwron) == 0) {
+		need_schedule = true;
+		goto reschedule;
+	}
 
-	if (unlikely(!ipc_active(mld)))
+	cp_runtime_link(mc, LINK_TX_TIMER, 0);
+
+	spin_lock_irqsave(&mc->lock, flags);
+	if (unlikely(!ipc_active(mld))) {
+		spin_unlock_irqrestore(&mc->lock, flags);
 		goto exit;
+	}
+	spin_unlock_irqrestore(&mc->lock, flags);
 
 #ifdef CONFIG_LINK_POWER_MANAGEMENT_WITH_FSM
 	if (mld->link_active) {
@@ -819,19 +837,23 @@ static enum hrtimer_restart tx_timer_func(struct hrtimer *timer)
 			need_schedule = true;
 	}
 
-	if (!need_schedule) {
-		for (i = 0; i < MAX_SIPC_MAP; i++) {
-			if (!txq_empty(mld->dev[i])) {
-				need_schedule = true;
-				break;
-			}
+	if (mask) {
+		spin_lock_irqsave(&mc->lock, flags);
+		if (unlikely(!ipc_active(mld))) {
+			spin_unlock_irqrestore(&mc->lock, flags);
+			need_schedule = false;
+			goto exit;
 		}
+		send_ipc_irq(mld, mask2int(mask));
+		spin_unlock_irqrestore(&mc->lock, flags);
 	}
 
-	if (mask)
-		send_ipc_irq(mld, mask2int(mask));
+	spin_unlock_irqrestore(&mc->lock, flags);
 
 exit:
+	cp_runtime_dislink(mc, LINK_TX_TIMER, 0);
+
+reschedule:
 	if (need_schedule) {
 		ktime_t ktime = ktime_set(0, mld->tx_period_ms * NSEC_PER_MSEC);
 		if (!wake_lock_active(&mld->tx_timer_wlock))
@@ -842,10 +864,80 @@ exit:
 			wake_unlock(&mld->tx_timer_wlock);
 	}
 
+	return HRTIMER_NORESTART;
+}
+
+static int tx_func(struct mem_link_device *mld, struct hrtimer *timer,
+					  struct mem_ipc_device *dev, struct sk_buff *skb)
+{
+	struct link_device *ld = &mld->link_dev;
+	struct modem_ctl *mc = ld->mc;
+	struct sk_buff_head *skb_txq = dev->skb_txq;
+	bool need_schedule = false;
+	u16 mask = msg_mask(dev);
+	unsigned long flags;
+	int ret = 0;
+
+	cp_runtime_link(mc, LINK_TX_TIMER, 0);
+
+	spin_lock_irqsave(&mc->lock, flags);
+
+	if (unlikely(!ipc_active(mld))) {
+		spin_unlock_irqrestore(&mc->lock, flags);
+		dev_kfree_skb_any(skb);
+		goto exit;
+	}
 	spin_unlock_irqrestore(&mc->lock, flags);
+
+#ifdef CONFIG_LINK_POWER_MANAGEMENT_WITH_FSM
+	if (mld->link_active) {
+		if (!mld->link_active(mld)) {
+			skb_queue_tail(skb_txq, skb);
+			need_schedule = true;
+			goto exit;
+		}
+	}
+#endif
+
+	ret = txq_write(mld, dev, skb);
+	if (unlikely(ret < 0)) {
+		if (ret == -EBUSY || ret == -ENOSPC) {
+			skb_queue_head(skb_txq, skb);
+			need_schedule = true;
+			txq_stop(mld, dev);
+			/* If txq has 2 or more packet and 2nd packet
+			  has -ENOSPC return, It request irq to consume
+			  the TX ring-buffer from CP */
+			send_ipc_irq(mld, mask2int(mask));
+		} else {
+			shmem_forced_cp_crash(mld, CRASH_REASON_MIF_TX_ERR,
+					"tx_frames_to_dev error");
+			need_schedule = false;
+		}
+		goto exit;
+	}
+	pktlog_tx_bottom_skb(mld, skb);
+	
+#ifdef DEBUG_MODEM_IF_LINK_TX
+	mif_pkt(skbpriv(skb)->sipc_ch, "LNK-TX", skb);
+#endif
+
+	dev_consume_skb_any(skb);
+
+	send_ipc_irq(mld, mask2int(mask));
+
+	if (mc->reserve_doorbell_int == true)
+		wake_lock_timeout(&mld->sbd_tx_timer_wlock, msecs_to_jiffies(3000));
+
+exit:
 	cp_runtime_dislink(mc, LINK_TX_TIMER, 0);
 
-	return HRTIMER_NORESTART;
+	if (need_schedule) {
+		ktime_t ktime = ktime_set(0, mld->tx_period_ms * NSEC_PER_MSEC);
+		hrtimer_start(timer, ktime, HRTIMER_MODE_REL);
+		return -1;
+	} else
+		return 1;
 }
 
 static inline void start_tx_timer(struct mem_link_device *mld,
@@ -960,7 +1052,7 @@ static int tx_frames_to_rb(struct sbd_ring_buffer *rb)
 #ifdef DEBUG_MODEM_IF_LINK_TX
 		mif_pkt(rb->ch, "LNK-TX", skb);
 #endif
-		dev_kfree_skb_any(skb);
+		dev_consume_skb_any(skb);
 	}
 
 	return (ret < 0) ? ret : tx_bytes;
@@ -977,6 +1069,11 @@ static enum hrtimer_restart sbd_tx_timer_func(struct hrtimer *timer)
 	bool need_schedule = false;
 	u16 mask = 0;
 	unsigned long flags = 0;
+
+	if (atomic_read(&mc->pcie_pwron) == 0) {
+		need_schedule = true;
+		goto reschedule;
+	}
 
 	cp_runtime_link(mc, LINK_SBD_TX_TIMER, 0);
 
@@ -1038,18 +1135,6 @@ static enum hrtimer_restart sbd_tx_timer_func(struct hrtimer *timer)
 			need_schedule = true;
 	}
 
-	if (!need_schedule) {
-		for (i = 0; i < sl->num_channels; i++) {
-			struct sbd_ring_buffer *rb;
-
-			rb = sbd_id2rb(sl, i, TX);
-			if (!rb_empty(rb)) {
-				need_schedule = true;
-				break;
-			}
-		}
-	}
-
 	if (mask) {
 		spin_lock_irqsave(&mc->lock, flags);
 		if (unlikely(!ipc_active(mld))) {
@@ -1060,20 +1145,92 @@ static enum hrtimer_restart sbd_tx_timer_func(struct hrtimer *timer)
 		send_ipc_irq(mld, mask2int(mask));
 		spin_unlock_irqrestore(&mc->lock, flags);
 	}
-	
 
 	if (mc->reserve_doorbell_int == true)
 		wake_lock_timeout(&mld->sbd_tx_timer_wlock, msecs_to_jiffies(3000));
 
 exit:
+	cp_runtime_dislink(mc, LINK_SBD_TX_TIMER, 0);
+
+reschedule:
 	if (need_schedule) {
 		ktime_t ktime = ktime_set(0, mld->tx_period_ms * NSEC_PER_MSEC);
 		hrtimer_start(timer, ktime, HRTIMER_MODE_REL);
 	}
 
+	return HRTIMER_NORESTART;
+}
+
+static int sbd_tx_func(struct mem_link_device *mld, struct hrtimer *timer,
+		    struct sbd_ring_buffer *rb, struct sk_buff *skb)
+{
+	struct link_device *ld = &mld->link_dev;
+	struct modem_ctl *mc = ld->mc;
+	bool need_schedule = false;
+	u16 mask = MASK_SEND_DATA;
+	unsigned long flags = 0;
+	int ret = 0;
+
+	cp_runtime_link(mc, LINK_SBD_TX_TIMER, 0);
+
+	spin_lock_irqsave(&mc->lock, flags);
+	if (unlikely(!ipc_active(mld))) {
+		spin_unlock_irqrestore(&mc->lock, flags);
+		dev_kfree_skb_any(skb);
+		goto exit;
+	}
+	spin_unlock_irqrestore(&mc->lock, flags);
+
+#ifdef CONFIG_LINK_POWER_MANAGEMENT
+	if (mld->link_active) {
+		if (!mld->link_active(mld)) {
+			skb_queue_tail(&rb->skb_q, skb);
+			need_schedule = true;
+			goto exit;
+		}
+	}
+#endif
+
+	ret = sbd_pio_tx(rb, skb);
+	if (unlikely(ret < 0)) {
+		if (ret == -EBUSY || ret == -ENOSPC) {
+			skb_queue_head(&rb->skb_q, skb);
+			need_schedule = true;
+			send_ipc_irq(mld, mask2int(mask));
+		} else {
+			shmem_forced_cp_crash(mld, CRASH_REASON_MIF_TX_ERR,
+					"tx_frames_to_rb error");
+			need_schedule = false;
+		}
+		goto exit;
+	}
+
+#ifdef DEBUG_MODEM_IF_LINK_TX
+	mif_pkt(rb->ch, "LNK-TX", skb);
+#endif
+	dev_consume_skb_any(skb);
+
+	spin_lock_irqsave(&mc->lock, flags);
+	if (unlikely(!ipc_active(mld))) {
+		spin_unlock_irqrestore(&mc->lock, flags);
+		need_schedule = false;
+		goto exit;
+	}
+	send_ipc_irq(mld, mask2int(mask));
+	spin_unlock_irqrestore(&mc->lock, flags);
+
+	if (mc->reserve_doorbell_int == true)
+		wake_lock_timeout(&mld->sbd_tx_timer_wlock, msecs_to_jiffies(3000));
+
+exit:
 	cp_runtime_dislink(mc, LINK_SBD_TX_TIMER, 0);
 
-	return HRTIMER_NORESTART;
+	if (need_schedule) {
+		ktime_t ktime = ktime_set(0, mld->tx_period_ms * NSEC_PER_MSEC);
+		hrtimer_start(timer, ktime, HRTIMER_MODE_REL);
+		return -1;
+	} else
+		return 1;
 }
 
 enum hrtimer_restart pcie_datalloc_timer_func(struct hrtimer *timer)
@@ -1110,13 +1267,14 @@ exit:
 static int xmit_ipc_to_rb(struct mem_link_device *mld, enum sipc_ch_id ch,
 			  struct sk_buff *skb)
 {
-	int ret;
+	int ret, ret2;
 	struct link_device *ld = &mld->link_dev;
 	struct io_device *iod = skbpriv(skb)->iod;
 	struct modem_ctl *mc = ld->mc;
 	struct sbd_ring_buffer *rb = sbd_ch2rb_with_skb(&mld->sbd_link_dev, ch, TX, skb);
 	struct sk_buff_head *skb_txq;
-	unsigned long flags;
+	unsigned long flags = 0;
+	int quota = MIF_TX_QUOTA;
 
 	if (!rb) {
 		mif_err("%s: %s->%s: ERR! NO SBD RB {ch:%d}\n",
@@ -1131,8 +1289,6 @@ static int xmit_ipc_to_rb(struct mem_link_device *mld, enum sipc_ch_id ch,
 		mld->forbid_cp_sleep(mld);
 #endif
 
-	spin_lock_irqsave(&rb->lock, flags);
-
 	if (unlikely(skb_txq->qlen >= MAX_SKB_TXQ_DEPTH)) {
 		mif_err_limited("%s: %s->%s: ERR! {ch:%d} "
 				"skb_txq.len %d >= limit %d\n",
@@ -1141,15 +1297,24 @@ static int xmit_ipc_to_rb(struct mem_link_device *mld, enum sipc_ch_id ch,
 		ret = -EBUSY;
 	} else {
 		skb->len = min_t(int, skb->len, rb->buff_size);
-
 		ret = skb->len;
-		skb_queue_tail(skb_txq, skb);
-		if (!wake_lock_active(&mld->sbd_tx_timer_wlock))
-			wake_lock_timeout(&mld->sbd_tx_timer_wlock, msecs_to_jiffies(3000));
-		start_tx_timer(mld, &mld->sbd_tx_timer);
-	}
 
-	spin_unlock_irqrestore(&rb->lock, flags);
+		skb_queue_tail(skb_txq, skb);
+
+		if (hrtimer_active(&mld->sbd_tx_timer)) {
+			start_tx_timer(mld, &mld->sbd_tx_timer);
+		} else if (spin_trylock_irqsave(&rb->lock, flags)) {
+			do {
+				skb = skb_dequeue(skb_txq);
+				if (!skb) break;
+
+				ret2 = sbd_tx_func(mld, &mld->sbd_tx_timer, rb, skb);
+				if (ret2 < 0) break;
+			} while (--quota);
+
+			spin_unlock_irqrestore(&rb->lock, flags);
+		}
+	}
 
 #ifdef CONFIG_LINK_POWER_MANAGEMENT
 	if (cp_online(mc) && mld->permit_cp_sleep)
@@ -1163,12 +1328,14 @@ static int xmit_ipc_to_rb(struct mem_link_device *mld, enum sipc_ch_id ch,
 static int xmit_ipc_to_dev(struct mem_link_device *mld, enum sipc_ch_id ch,
 			   struct sk_buff *skb)
 {
-	int ret;
+	int ret, ret2;
 	struct link_device *ld = &mld->link_dev;
 	struct io_device *iod = skbpriv(skb)->iod;
 	struct modem_ctl *mc = ld->mc;
 	struct mem_ipc_device *dev = mld->dev[get_mmap_idx(ch, skb)];
 	struct sk_buff_head *skb_txq;
+	unsigned long flags = 0;
+	int quota = MIF_TX_QUOTA;
 
 	if (!dev) {
 		mif_err("%s: %s->%s: ERR! NO IPC DEV {ch:%d}\n",
@@ -1189,10 +1356,22 @@ static int xmit_ipc_to_dev(struct mem_link_device *mld, enum sipc_ch_id ch,
 		ret = -EBUSY;
 	} else {
 		ret = skb->len;
-		skb_queue_tail(dev->skb_txq, skb);
-		if (!wake_lock_active(&mld->tx_timer_wlock))
-			wake_lock(&mld->tx_timer_wlock);
-		start_tx_timer(mld, &mld->tx_timer);
+
+		skb_queue_tail(skb_txq, skb);
+
+		if (hrtimer_active(&mld->tx_timer)) {
+			start_tx_timer(mld, &mld->tx_timer);
+		} else if (spin_trylock_irqsave(&dev->tx_lock, flags)) {
+			do {
+				skb = skb_dequeue(skb_txq);
+				if (!skb) break;
+
+				ret2 = tx_func(mld, &mld->tx_timer, dev, skb);
+				if (ret2 < 0) break;
+			} while (--quota);
+
+			spin_unlock_irqrestore(&dev->tx_lock, flags);
+		}
 	}
 
 #ifdef CONFIG_LINK_POWER_MANAGEMENT
@@ -1984,8 +2163,6 @@ static int shmem_send(struct link_device *ld, struct io_device *iod,
 	u8 ch = iod->id;
 	int ret = -ENODEV;
 
-	cp_runtime_link(mc, LINK_SEND, iod->id);
-
 	switch (id) {
 	case IPC_RAW:
 		if (sipc_ps_ch(iod->id)) {
@@ -2013,13 +2190,19 @@ static int shmem_send(struct link_device *ld, struct io_device *iod,
 	case IPC_FMT:
 		if (likely(sipc5_ipc_ch(ch)))
 			ret = xmit_ipc(mld, iod, ch, skb);
-		else
+		else {
+			cp_runtime_link(mc, LINK_SEND, iod->id);
 			ret = xmit_udl(mld, iod, ch, skb);
+			cp_runtime_dislink(mc, LINK_SEND, iod->id);
+		}
 
 	case IPC_BOOT:
 	case IPC_DUMP:
-		if (sipc5_udl_ch(ch))
+		if (sipc5_udl_ch(ch)) {
+			cp_runtime_link(mc, LINK_SEND, iod->id);
 			ret = xmit_udl(mld, iod, ch, skb);
+			cp_runtime_dislink(mc, LINK_SEND, iod->id);
+		}
 		break;
 
 	default:
@@ -2027,8 +2210,6 @@ static int shmem_send(struct link_device *ld, struct io_device *iod,
 	}
 
 exit:
-	cp_runtime_dislink(mc, LINK_SEND, iod->id);
-
 	return ret;
 }
 
@@ -2156,16 +2337,17 @@ void shmem_check_modem_binary_crc(struct link_device *ld)
 #endif
 
 #ifdef CONFIG_MODEM_IF_NET_GRO
-static long gro_flush_time = 100000L;
-module_param(gro_flush_time, long, 0644);
+extern long gro_flush_time;
 
 static void gro_flush_timer(struct link_device *ld)
 {
 	struct mem_link_device *mld = to_mem_link_device(ld);
 	struct timespec curr, diff;
 
-	if (!gro_flush_time)
+	if (!gro_flush_time) {
+		napi_gro_flush(&mld->mld_napi, false);
 		return;
+	}
 
 	if (unlikely(mld->flush_time.tv_sec == 0)) {
 		getnstimeofday(&mld->flush_time);
@@ -2173,7 +2355,7 @@ static void gro_flush_timer(struct link_device *ld)
 		getnstimeofday(&(curr));
 		diff = timespec_sub(curr, mld->flush_time);
 		if ((diff.tv_sec > 0) || (diff.tv_nsec > gro_flush_time)) {
-			napi_gro_flush(napi_get_current(), false);
+			napi_gro_flush(&mld->mld_napi, false);
 			getnstimeofday(&mld->flush_time);
 		}
 	}
@@ -2226,7 +2408,6 @@ static int mld_rx_int_poll(struct napi_struct *napi, int budget)
 			goto dummy_poll_complete;
 		}
 	}
-
 #ifdef CONFIG_CP_DIT
 	/* Error handling : DIT busy, ... */
 	if (dit_check_busy(&mld->dit))
@@ -2268,6 +2449,10 @@ static int mld_rx_int_poll(struct napi_struct *napi, int budget)
 		}
 	}
 #endif
+
+	if (total_ps_rcvd) {
+		mod_timer(&mld->cp_not_work, jiffies + 5 * 60 * HZ);
+	}
 
 	if (total_ps_rcvd < total_budget) {
 #ifdef CONFIG_CP_DIT
@@ -2355,11 +2540,14 @@ static int shmem_update_firm_info(struct link_device *ld, struct io_device *iod,
 static int shmem_force_dump(struct link_device *ld, struct io_device *iod)
 {
 	struct mem_link_device *mld = to_mem_link_device(ld);
-	u32 crash_type = ld->crash_type;
 
 	mif_err("+++\n");
-	shmem_forced_cp_crash(mld, crash_type,
-		"forced crash is called by ioctl command");
+	if (0 < ld->crash_type && ld->crash_type <= CRASH_REASON_USER) {
+		mld->crash_reason.owner = ld->crash_type;
+		sprintf(mld->crash_reason.string, "forced crash called by ioctl command");
+	}
+	
+	shmem_forced_cp_crash(mld, mld->crash_reason.owner, mld->crash_reason.string);
 	mif_err("---\n");
 	return 0;
 }
@@ -2460,6 +2648,7 @@ static void send_ap2cp_irq(struct mem_link_device *mld, u16 mask)
 	struct link_device *ld = &mld->link_dev;
 	struct modem_ctl *mc = ld->mc;
 	int wait_counter = 0;
+	int ret;
 
 	if (in_interrupt() || irqs_disabled()) {
 		/* If runtime PM state is not RPM_ACTIVE */
@@ -2478,8 +2667,12 @@ static void send_ap2cp_irq(struct mem_link_device *mld, u16 mask)
 
 	iowrite32(mask, mld->ap2cp_msg);
 
-	if (s5100pcie_send_doorbell_int(mld->intval_ap2cp_msg) != 0)
-		s5100_force_crash_exit_ext();
+	ret = s5100pcie_send_doorbell_int(mld->intval_ap2cp_msg);
+	if (ret == -EIO)
+		s5100_force_crash_exit_ext(CRASH_REASON_MIF_MDM_CTRL,
+					   "fail to send doorbell [1]");
+	else if (ret < 0)
+		mc->reserve_doorbell_int = true;
 }
 
 static inline u16 read_ap2cp_irq(struct mem_link_device *mld)
@@ -3748,6 +3941,12 @@ struct link_device *pcie_create_link_device(struct platform_device *pdev)
 	if (sysfs_create_group(&pdev->dev.kobj, &napi_group))
 		mif_err("failed to create sysfs node related napi\n");
 #endif
+
+	/* register pcie link state monitor */
+	init_timer(&mld->cp_not_work);
+	mld->cp_not_work.expires = jiffies;
+	mld->cp_not_work.function = handle_cp_not_work;
+	mld->cp_not_work.data = (unsigned long)mld;
 
 	mif_err("---\n");
 	return ld;

@@ -214,6 +214,8 @@ enum max77705_vcon_role {
 #define FW_WAIT_TIMEOUT			(1000 * 5) /* 5 sec */
 #define I2C_SMBUS_BLOCK_HALF	(I2C_SMBUS_BLOCK_MAX / 2)
 
+#define GET_CONTROL3_LOCK_ERROR_EN(_x)		((_x & (0x1 << 1)) >> 1)
+
 typedef struct {
 	u32 magic;     /* magic number */
 	u8 major;         /* major version */
@@ -434,6 +436,7 @@ enum max77705_pdmsg {
 	Battery_Capabilities_Received = 0x37,
 	Batery_Status_Received = 0x38,
 	Manufacturer_Info_Received = 0x39,
+	Alert_Message = 0x3e,
 	VDM_NAK_Recevied = 0x40,
 	VDM_BUSY_Recevied = 0x41,
 	VDM_ACK_Recevied = 0x42,
@@ -511,6 +514,8 @@ typedef enum {
 	OPCODE_CHGIN_ILIM2_W,
 	OPCODE_CTRLREG_INIT_R = 0x1A,
 	OPCODE_CTRLREG_INIT_W,
+	OPCODE_CTRLREG3_R = 0x1C,
+	OPCODE_CTRLREG3_W = 0x1D,
 	OPCODE_AFC_HV_W = 0x20,
 	OPCODE_AFC_RESULT_R,
 	OPCODE_QC2P0_SET = 0x22,
@@ -538,6 +543,7 @@ typedef enum {
 	OPCODE_SET_ALTERNATEMODE = 0x55,
 	OPCODE_SAMSUNG_FW_AUTOIBUS = 0x57,
 	OPCODE_READ_SELFTEST = 0x59,
+	OPCODE_SAMSUNG_READ_MESSAGE = 0x5D,
 	OPCODE_GRL_COMMAND = 0x70,
 	OPCODE_RAM_TEST_COMMAND = 0xD1,
 	OPCODE_NONE = 0xff,

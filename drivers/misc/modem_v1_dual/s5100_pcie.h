@@ -64,12 +64,14 @@ void restore_s5100_state(void);
 void disable_msi_int(void);
 void print_msi_register(void);
 int s5100_recover_pcie_link(bool start);
-void s5100_check_doorbell_ready(void);
 int request_pcie_msi_int(struct link_device *ld,
 				struct platform_device *pdev);
-int s5100_force_crash_exit_ext(void);
+int s5100_force_crash_exit_ext(u32 owner, char *reason);
 int s5100_send_panic_noti_ext(void);
 int s5100_set_gpio_2cp_uart_sel(struct modem_ctl *mc, int value);
 int s5100_get_gpio_2cp_uart_sel(struct modem_ctl *mc);
+
+// PCIE Dynamic lane change : from //drivers/pci
+int exynos_pcie_host_v1_lanechange(int ch_num, int lane);
 
 #endif /* __S5100_PCIE_H__ */

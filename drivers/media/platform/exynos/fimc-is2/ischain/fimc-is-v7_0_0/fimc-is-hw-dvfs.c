@@ -20,12 +20,14 @@
 		| POS_BIT(SENSOR_POSITION_REAR2)	\
 		| POS_BIT(SENSOR_POSITION_REAR3)	\
 		| POS_BIT(SENSOR_POSITION_REAR4)	\
+		| POS_BIT(SENSOR_POSITION_REAR_TOF)	\
 		)
 #define FRONT_SENSOR_POS_MASK	(			\
 		POS_BIT(SENSOR_POSITION_FRONT)		\
 		| POS_BIT(SENSOR_POSITION_FRONT2)	\
 		| POS_BIT(SENSOR_POSITION_FRONT3)	\
 		| POS_BIT(SENSOR_POSITION_FRONT4)	\
+		| POS_BIT(SENSOR_POSITION_FRONT_TOF)	\
 		)
 #define	IS_REAR_SENSOR(pos)		(POS_BIT(pos) & REAR_SENSOR_POS_MASK)
 #define	IS_FRONT_SENSOR(pos)		(POS_BIT(pos) & FRONT_SENSOR_POS_MASK)
@@ -57,6 +59,8 @@ DECLARE_DVFS_DT(FIMC_IS_SN_END,
 		{"front_vt2_"				, FIMC_IS_SN_FRONT_VT2},
 		{"front_vt4_"				, FIMC_IS_SN_FRONT_VT4},
 		{"front_preview_high_speed_fps_"	, FIMC_IS_SN_FRONT_PREVIEW_HIGH_SPEED_FPS},
+		{"front_video_high_speed_120fps_"	, FIMC_IS_SN_FRONT_VIDEO_HIGH_SPEED_120FPS},
+		{"front_video_high_speed_240fps_"	, FIMC_IS_SN_FRONT_VIDEO_HIGH_SPEED_240FPS},
 		{"rear3_preview_fhd_"			, FIMC_IS_SN_REAR3_PREVIEW_FHD},
 		{"rear3_capture_"			, FIMC_IS_SN_REAR3_CAPTURE},
 		{"rear3_video_fhd_"			, FIMC_IS_SN_REAR3_CAMCORDING_FHD},
@@ -133,7 +137,10 @@ DECLARE_DVFS_CHK_FUNC(FIMC_IS_SN_FRONT_DUAL_SYNC_FHD_CAMCORDING_CAPTURE);
 DECLARE_DVFS_CHK_FUNC(FIMC_IS_SN_FRONT_VT1);
 DECLARE_DVFS_CHK_FUNC(FIMC_IS_SN_FRONT_VT2);
 DECLARE_DVFS_CHK_FUNC(FIMC_IS_SN_FRONT_VT4);
+
 DECLARE_DVFS_CHK_FUNC(FIMC_IS_SN_FRONT_PREVIEW_HIGH_SPEED_FPS);
+DECLARE_DVFS_CHK_FUNC(FIMC_IS_SN_FRONT_VIDEO_HIGH_SPEED_120FPS);
+DECLARE_DVFS_CHK_FUNC(FIMC_IS_SN_FRONT_VIDEO_HIGH_SPEED_240FPS);
 
 DECLARE_DVFS_CHK_FUNC(FIMC_IS_SN_REAR3_PREVIEW_FHD);
 DECLARE_DVFS_CHK_FUNC(FIMC_IS_SN_REAR3_CAPTURE);
@@ -187,6 +194,7 @@ DECLARE_DVFS_CHK_FUNC(FIMC_IS_SN_VIDEO_HIGH_SPEED_DUALFPS);
 DECLARE_DVFS_CHK_FUNC(FIMC_IS_SN_VIDEO_HIGH_SPEED_60FPS_CAPTURE);
 
 /* external isp's dvfs */
+DECLARE_EXT_DVFS_CHK_FUNC(FIMC_IS_SN_EXT_DUAL);
 DECLARE_EXT_DVFS_CHK_FUNC(FIMC_IS_SN_EXT_REAR);
 DECLARE_EXT_DVFS_CHK_FUNC(FIMC_IS_SN_EXT_FRONT);
 DECLARE_EXT_DVFS_CHK_FUNC(FIMC_IS_SN_EXT_SECURE);
@@ -336,6 +344,14 @@ struct fimc_is_dvfs_scenario static_scenarios[] = {
 		.scenario_id		= FIMC_IS_SN_PIP_PREVIEW,
 		.scenario_nm		= DVFS_SN_STR(FIMC_IS_SN_PIP_PREVIEW),
 		.check_func		= GET_DVFS_CHK_FUNC(FIMC_IS_SN_PIP_PREVIEW),
+	}, {
+		.scenario_id		= FIMC_IS_SN_FRONT_VIDEO_HIGH_SPEED_120FPS,
+		.scenario_nm		= DVFS_SN_STR(FIMC_IS_SN_FRONT_VIDEO_HIGH_SPEED_120FPS),
+		.check_func		= GET_DVFS_CHK_FUNC(FIMC_IS_SN_FRONT_VIDEO_HIGH_SPEED_120FPS),
+	}, {
+		.scenario_id		= FIMC_IS_SN_FRONT_VIDEO_HIGH_SPEED_240FPS,
+		.scenario_nm		= DVFS_SN_STR(FIMC_IS_SN_FRONT_VIDEO_HIGH_SPEED_240FPS),
+		.check_func		= GET_DVFS_CHK_FUNC(FIMC_IS_SN_FRONT_VIDEO_HIGH_SPEED_240FPS),
 	}, {
 		.scenario_id		= FIMC_IS_SN_FRONT_CAMCORDING,
 		.scenario_nm		= DVFS_SN_STR(FIMC_IS_SN_FRONT_CAMCORDING),
@@ -513,6 +529,10 @@ static struct fimc_is_dvfs_scenario dynamic_scenarios[] = {
  */
 struct fimc_is_dvfs_scenario external_scenarios[] = {
 	{
+		.scenario_id		= FIMC_IS_SN_EXT_DUAL,
+		.scenario_nm		= DVFS_SN_STR(FIMC_IS_SN_EXT_DUAL),
+		.ext_check_func		= GET_DVFS_CHK_FUNC(FIMC_IS_SN_EXT_DUAL),
+	}, {
 		.scenario_id		= FIMC_IS_SN_EXT_REAR,
 		.scenario_nm		= DVFS_SN_STR(FIMC_IS_SN_EXT_REAR),
 		.ext_check_func		= GET_DVFS_CHK_FUNC(FIMC_IS_SN_EXT_REAR),
@@ -1202,6 +1222,32 @@ DECLARE_DVFS_CHK_FUNC(FIMC_IS_SN_FRONT2_CAMCORDING_CAPTURE)
 }
 
 /* front recording */
+DECLARE_DVFS_CHK_FUNC(FIMC_IS_SN_FRONT_VIDEO_HIGH_SPEED_120FPS)
+{
+	u32 mask = (device->setfile & FIMC_IS_SETFILE_MASK);
+	/* It uses same setfile scenario index for every high speed recording mode. */
+	bool setfile_flag = (mask == ISS_SUB_SCENARIO_FHD_240FPS);
+
+	if (IS_FRONT_SENSOR(position) &&
+			(fps > 60) &&
+			(fps <= 120) &&
+			setfile_flag)
+		return 1;
+	else
+		return 0;
+}
+
+DECLARE_DVFS_CHK_FUNC(FIMC_IS_SN_FRONT_VIDEO_HIGH_SPEED_240FPS)
+{
+	u32 mask = (device->setfile & FIMC_IS_SETFILE_MASK);
+	bool setfile_flag = (mask == ISS_SUB_SCENARIO_FHD_240FPS);
+
+	if (IS_FRONT_SENSOR(position) && (fps > 120) && setfile_flag)
+		return 1;
+	else
+		return 0;
+}
+
 DECLARE_DVFS_CHK_FUNC(FIMC_IS_SN_FRONT_CAMCORDING)
 {
 	u32 mask = (device->setfile & FIMC_IS_SETFILE_MASK);
@@ -1462,6 +1508,15 @@ DECLARE_DVFS_CHK_FUNC(FIMC_IS_SN_VIDEO_HIGH_SPEED_60FPS_CAPTURE)
 		return 1;
 	else
 		return 0;
+}
+
+DECLARE_EXT_DVFS_CHK_FUNC(FIMC_IS_SN_EXT_DUAL)
+{
+	/* Just follow the current DVFS scenario for the additional external sensor. */
+	if (stream_cnt > 1)
+		return DVFS_SKIP;
+	else
+		return DVFS_NOT_MATCHED;
 }
 
 DECLARE_EXT_DVFS_CHK_FUNC(FIMC_IS_SN_EXT_REAR)

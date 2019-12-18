@@ -1,40 +1,24 @@
-/* linux/drivers/video/fbdev/exynos/mcd_hdr/mcd_cm_def.h
- *
- * Copyright (c) 2016 Samsung Electronics Co., Ltd.
- *
- * header file for Samsung EXYNOS SoC HDR driver
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- */
-
-#ifndef __MCD_CM_DEF_H__
-#define __MCD_CM_DEF_H__
-
-enum pq_index {
-    INDEX_PQ1000 = 0,
-    INDEX_PQ2000 = 1,
-    INDEX_PQ3000 = 2,
-    INDEX_PQ4000 = 3,
-    INDEX_PQ_MAX,
-};
-
-enum target_nit_index {
+/* linux/drivers/video/fbdev/exynos/mcd_hdr/mcd_cm_def.h * * Copyright (c) 2016 Samsung Electronics Co., Ltd. * * header file for Samsung EXYNOS SoC HDR driver * * This program is free software; you can redistribute it and/or modify * it under the terms of the GNU General Public License version 2 as * published by the Free Software Foundation. */
+#ifndef __MCD_CM_DEF_H__#define __MCD_CM_DEF_H__enum pq_index {    INDEX_PQ0200 = 0,    INDEX_PQ0250,    INDEX_PQ0300,    INDEX_PQ0350,    INDEX_PQ0400,    INDEX_PQ0450,    INDEX_PQ0500,    INDEX_PQ0550,    INDEX_PQ0600,    INDEX_PQ0650,    INDEX_PQ0700,    INDEX_PQ0750,    INDEX_PQ0800,    INDEX_PQ0850,    INDEX_PQ0900,    INDEX_PQ0950,    INDEX_PQ1000,    INDEX_PQ2000,    INDEX_PQ3000,    INDEX_PQ4000,    INDEX_PQ_MAX,};enum target_nit_index {
     INDEX_T0200 = 0,
     INDEX_T0250 = 1,
     INDEX_T0300 = 2,
     INDEX_T0350 = 3,
     INDEX_T0400 = 4,
-    INDEX_T0450 = 5,
-    INDEX_T0500 = 6,
+    INDEX_T0450 = 5,    INDEX_T0500 = 6,
     INDEX_T0550 = 7,
-    INDEX_T1000 = 8,
-    INDEX_THLG,
+    INDEX_T0600 = 8,
+    INDEX_T0650 = 9,
+    INDEX_T0700 = 10,
+    INDEX_T0750 = 11,
+    INDEX_T0800 = 12,
+    INDEX_T0850 = 13,
+    INDEX_T0900 = 14,
+    INDEX_T0950 = 15,
+    INDEX_T1000 = 16,
+    INDEX_THLG  = 17,
     INDEX_TMAX
-};
-
-enum gamma_type_index {
+};enum gamma_type_index {
     INDEX_TYPE_SDR = 0,
     INDEX_TYPE_PQ  = 1,
     INDEX_TYPE_HLG = 2,
@@ -52,10 +36,7 @@ enum gamut_index {
     INDEX_GAMUT_DCI_P3         ,    // HAL_DATASPACE_STANDARD_DCI_P3
     INDEX_GAMUT_ADOBE_RGB      ,    // HAL_DATASPACE_STANDARD_ADOBE_RGB
     INDEX_GAMUT_NUM            ,
-};
-
-
-enum gamma_index {
+};enum gamma_index {
     INDEX_GAMMA_UNSPECIFIED = 0,    // HAL_DATASPACE_TRANSFER_UNSPECIFIED
     INDEX_GAMMA_LINEAR         ,    // HAL_DATASPACE_TRANSFER_LINEAR
     INDEX_GAMMA_SRGB           ,    // HAL_DATASPACE_TRANSFER_SRGB
@@ -66,15 +47,4 @@ enum gamma_index {
     INDEX_GAMMA_ST2084         ,    // HAL_DATASPACE_TRANSFER_ST2084
     INDEX_GAMMA_HLG            ,    // HAL_DATASPACE_TRANSFER_HLG
     INDEX_GAMMA_NUM            ,
-};
-
-struct cm_tables {
-    unsigned int *eotf;   // SZ_CM_EOTF 96
-    unsigned int *gm;     // SZ_CM_GM   5
-    unsigned int *oetf;   // SZ_CM_OETF 30
-    unsigned int  tms;    // SZ_CM_TMS  1
-    unsigned int *sc;     // SZ_CM_SC   2
-    unsigned int *tm;     // SZ_CM_TM   25
-};
-
-#endif //__MCD_CM_DEF_H__
+};#define SMPTE170M_ASSUME_GAMMA22#define TUNE_NETFLIX#endif //__MCD_CM_DEF_H__

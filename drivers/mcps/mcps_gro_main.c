@@ -14,10 +14,6 @@
 //#endif
 ////-- beyond
 
-#ifdef CONFIG_MCPS_DEBUG_SYSTRACE
-#include <trace/events/mcps_if.h>
-#endif
-
 #include "mcps_sauron.h"
 #include "mcps_device.h"
 #include "mcps_buffer.h"
@@ -28,19 +24,21 @@ DEFINE_PER_CPU_ALIGNED(struct mcps_pantry , mcps_gro_pantries);
 EXPORT_PER_CPU_SYMBOL(mcps_gro_pantries);
 
 int mcps_gro_pantry_max_capability __read_mostly = 30000;
-module_param(mcps_gro_pantry_max_capability , int , 0644);
+module_param(mcps_gro_pantry_max_capability , int , 0640);
 int mcps_gro_pantry_quota __read_mostly = 300;
-module_param(mcps_gro_pantry_quota , int , 0644);
+module_param(mcps_gro_pantry_quota , int , 0640);
 
-static long mcps_gro_flush_time = 150000L;
-module_param(mcps_gro_flush_time, long, 0644);
+static long mcps_gro_flush_time = 5000L;
+module_param(mcps_gro_flush_time, long, 0640);
 
 static void mcps_gro_flush_timer(struct mcps_pantry *pantry)
 {
     struct timespec curr, diff;
 
     if (!mcps_gro_flush_time) {
+        tracing_mark_writev('B',1111,"gro_flush_bytimer", 0);
         napi_gro_flush(&pantry->rx_napi_struct, false);
+        tracing_mark_writev('E',1111,"gro_flush_bytimer", 0);
         return;
     }
 
@@ -50,7 +48,9 @@ static void mcps_gro_flush_timer(struct mcps_pantry *pantry)
         getnstimeofday(&(curr));
         diff = timespec_sub(curr, pantry->flush_time);
         if ((diff.tv_sec > 0) || (diff.tv_nsec > mcps_gro_flush_time)) {
+            tracing_mark_writev('B',1111,"gro_flush_bytimer", 0);
             napi_gro_flush(&pantry->rx_napi_struct, false);
+            tracing_mark_writev('E',1111,"gro_flush_bytimer", 0);
             getnstimeofday(&pantry->flush_time);
         }
     }
@@ -76,10 +76,13 @@ static int process_gro_pantry(struct napi_struct *napi , int quota)
     int work = 0;
     bool again = true;
 
+    tracing_mark_writev('B',1111,"process_gro_pantry", 0);
     if(mcps_on_ipi_waiting(pantry)) {
         local_irq_disable();
         mcps_do_ipi_and_irq_enable(pantry);
     }
+
+    getnstimeofday(&pantry->flush_time);
 
     while (again) {
         struct sk_buff *skb;
@@ -89,23 +92,20 @@ static int process_gro_pantry(struct napi_struct *napi , int quota)
 
             if (mcps_check_skb_can_gro(skb)/*&& (flag & FLAG_GRO)*/) {
                 __this_cpu_inc(mcps_gro_pantries.gro_processed);
-#ifdef CONFIG_MCPS_DEBUG_SYSTRACE
-                trace_tracing_mark_write("B",1111,"napi_gro_rx", 0);
+                tracing_mark_writev('B',1111,"napi_gro_rx", 0);
                 napi_gro_receive(napi, skb);
-                trace_tracing_mark_write("E",1111,"napi_gro_rx", 1);
-#else
-                napi_gro_receive(napi, skb);
-#endif
+                tracing_mark_writev('E',1111,"napi_gro_rx", 0);
+
                 mcps_gro_flush_timer(pantry);
             } else {
                 __this_cpu_inc(mcps_gro_pantries.processed);
+                tracing_mark_writev('B',1111,"netif_receive_skb", 0);
                 netif_receive_skb(skb); //This function may only be called from softirq context and interrupts should be enabled. Ref.function description
+                tracing_mark_writev('E',1111,"netif_receive_skb", 1);
             }
             if (++work >= quota) {
                 PRINT_GRO_WORKED(pantry->cpu , work , quota);
-//                napi_gro_flush(&pantry->rx_napi_struct, false);
-//                getnstimeofday(&pantry->flush_time);
-                return work;
+                goto end;
             }
         }
 
@@ -131,11 +131,14 @@ static int process_gro_pantry(struct napi_struct *napi , int quota)
         check_pending_info(pantry->cpu , (pantry->processed + pantry->gro_processed), 1);
     }
 
+    tracing_mark_writev('B',1111,"napi_gro_flush", 0);
     napi_gro_flush(&pantry->rx_napi_struct, false);
-    getnstimeofday(&pantry->flush_time);
+    tracing_mark_writev('E',1111,"napi_gro_flush", 0);
 
     check_pending_info(pantry->cpu , (pantry->processed + pantry->gro_processed), 1);
 
+end:
+    tracing_mark_writev('E',1111,"process_gro_pantry", work);
     return work;
 }
 
@@ -164,6 +167,7 @@ static int enqueue_to_gro_pantry(struct sk_buff *skb, int cpu)
     unsigned long flags;
     unsigned int qlen;
 
+    tracing_mark_writev('B',1111,"enqueue_to_gro_pantry", cpu);
     pantry = &per_cpu(mcps_gro_pantries, cpu);
 
     local_irq_save(flags); //save register information into flags and disable irq (local_irq_disabled)
@@ -179,7 +183,7 @@ enqueue:
 
             pantry_unlock(pantry);
             local_irq_restore(flags);
-
+            tracing_mark_writev('E',1111,"enqueue_to_gro_pantry", cpu);
             return NET_RX_SUCCESS;
         }
 
@@ -199,7 +203,7 @@ enqueue:
     pantry_unlock(pantry);
 
     local_irq_restore(flags);
-
+    tracing_mark_writev('E',1111,"enqueue_to_gro_pantry", 99);
 //    kfree_skb(skb);
     return NET_RX_DROP;
 }

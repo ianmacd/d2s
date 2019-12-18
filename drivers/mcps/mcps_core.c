@@ -77,7 +77,7 @@ void __add_flow(struct sauron* sauron, struct eye * eye , int cpu , u32 gro)
  * */
 struct eye* __search_flow_rcu(struct sauron* sauron, u32 hash)
 {
-    unsigned int idx = hash % HASH_SIZE(sauron->sauron_eyes);
+    unsigned int idx = (unsigned int)(hash % HASH_SIZE(sauron->sauron_eyes));
     struct eye* eye;
 
     hlist_for_each_entry_rcu(eye , &sauron->sauron_eyes[idx] , eye_hash_node)
@@ -110,7 +110,7 @@ error :
 }
 
 struct eye* search_flow_lock(struct sauron * sauron , u32 hash) {
-    unsigned int idx = hash % HASH_SIZE(sauron->sauron_eyes);
+    unsigned int idx = (unsigned int)(hash % HASH_SIZE(sauron->sauron_eyes));
     struct eye* eye;
     struct hlist_node *temp;
 
@@ -277,7 +277,7 @@ struct eye* add_flow(struct sk_buff* skb , unsigned int hash, int cpu, u32 gro)
 
     rcu_read_lock();
     sauron = rcu_dereference(mcps->sauron_body);
-    idx = hash % HASH_SIZE(sauron->sauron_eyes);
+    idx = (unsigned int)(hash % HASH_SIZE(sauron->sauron_eyes));
     spin_lock(&sauron->sauron_eyes_lock);
     // I think we should re-find hash value... cuz RCU
     if(search_flow_lock(sauron , hash)) {
@@ -369,7 +369,7 @@ __get_rand_cpu (struct rps_map *map, u32 hash) {
         return cpu;
     }
 
-    return cpu;
+    return -1;
 }
 
 static int
@@ -381,9 +381,9 @@ get_rand_cpu (struct arps_meta * arps, u32 hash , unsigned int cluster)
     if(cluster >= NR_CLUSTER)
         cluster = ALL_CLUSTER;
 
-    map = ARPS_MAP_RCU(arps, cluster);
+    map = ARPS_MAP(arps, cluster);
     if(!map->len) {
-        map = ARPS_MAP_RCU(arps, ALL_CLUSTER);
+        map = ARPS_MAP(arps, ALL_CLUSTER);
     }
 
     cpu = __get_rand_cpu(map, hash);
@@ -427,7 +427,6 @@ int get_arps_cpu(struct mcps_config * mcps , struct sk_buff *skb , u32 hash , u3
     struct sauron    *sauron    = NULL;
     struct eye       *eye       = NULL;
     struct arps_meta *arps      = NULL;
-    struct arps_meta *base_arps = NULL;
 
     stat->cpu_distribute++;
 
@@ -445,7 +444,8 @@ int get_arps_cpu(struct mcps_config * mcps , struct sk_buff *skb , u32 hash , u3
     eye = __search_flow_rcu(sauron , hash);
     if(!eye) {
         unsigned int cluster = (mcps_set_cluster_for_newflow >= NR_CLUSTER) ? CLUSTER(smp_processor_id_safe()) : mcps_set_cluster_for_newflow;
-        int cpu = get_rand_cpu(arps , hash, cluster);
+        struct arps_meta *newflow_arps = get_newflow_rcu();
+        int cpu = get_rand_cpu(newflow_arps , hash, cluster);
 
         rcu_read_unlock();
         eye = add_flow(skb, hash , cpu , gro);
@@ -456,10 +456,9 @@ int get_arps_cpu(struct mcps_config * mcps , struct sk_buff *skb , u32 hash , u3
     }
 
     arps        = get_arps_rcu();
-    base_arps   = get_static_arps_rcu();
     sauron      = rcu_dereference(mcps->sauron_body);
 
-    if(!arps || !base_arps || !sauron) {
+    if(!arps || !sauron) {
         goto error;
     }
 
@@ -476,7 +475,7 @@ int get_arps_cpu(struct mcps_config * mcps , struct sk_buff *skb , u32 hash , u3
         return NR_CPUS;
     }
 
-    if(!cpumask_test_cpu(eye->cpu , base_arps->mask)) {
+    if(!cpumask_test_cpu(eye->cpu , arps->mask)) {
         update_mask(sauron, arps, eye, CLUSTER(eye->cpu));
         goto changed;
     }

@@ -61,6 +61,7 @@
 #include "modem_prj.h"
 #include "modem_variation.h"
 #include "modem_utils.h"
+#include "modem_klat.h"
 
 #define FMT_WAKE_TIME   (HZ/2)
 #define RAW_WAKE_TIME   (HZ*6)
@@ -819,6 +820,8 @@ static ssize_t xlat_plat_store(struct kobject *kobj,
 		mif_err("-- unhandled plat prefix for device %s\n", ptr);
 	}
 
+	(void)klat_plat_store(kobj, attr, buf, count);
+
 	mif_err("plat prefix: %pI6\n", &nf_linkfwd.plat_prfix);
 #else
 	mif_err("DIT NOT supported\n");
@@ -867,6 +870,7 @@ static ssize_t xlat_addrs_store(struct kobject *kobj,
 		mif_err("-- unhandled clat addr for device %s\n", ptr);
 	}
 
+	(void)klat_addrs_store(kobj, attr, buf, count);
 #else
 	mif_err("DIT NOT supported\n");
 #endif
@@ -913,6 +917,7 @@ static ssize_t xlat_v4_addrs_store(struct kobject *kobj,
 		mif_err("-- unhandled clat v4 addr for device %s\n", ptr);
 	}
 
+	(void)klat_v4_addrs_store(kobj, attr, buf, count);
 #else
 	mif_err("DIT NOT supported\n");
 #endif
@@ -1140,10 +1145,7 @@ static void modem_shutdown(struct platform_device *pdev)
 static int modem_suspend(struct device *pdev)
 {
 	struct modem_ctl *mc = dev_get_drvdata(pdev);
-#ifdef CONFIG_LINK_DEVICE_SHMEM
-	struct modem_mbox *mbox = mc->mdm_data->mbx;
-	struct utc_time t;
-#endif
+	int ret = 0;
 
 #if !defined(CONFIG_LINK_DEVICE_HSIC)
 	if (mc->gpio_pda_active)
@@ -1155,40 +1157,19 @@ static int modem_suspend(struct device *pdev)
 	mipi_lli_suspend();
 #endif
 
-#ifdef CONFIG_LINK_DEVICE_SHMEM
-	get_utc_time(&t);
-	mif_err("time = %d.%d\n", t.sec + (t.min * 60), t.us);
-	mbox_update_value(MCU_CP, mbox->mbx_ap2cp_kerneltime,
-			t.sec + (t.min * 60),
-			mbox->sbi_ap2cp_kerneltime_sec_mask,
-			mbox->sbi_ap2cp_kerneltime_sec_pos);
-	mbox_update_value(MCU_CP, mbox->mbx_ap2cp_kerneltime, t.us,
-			mbox->sbi_ap2cp_kerneltime_usec_mask,
-			mbox->sbi_ap2cp_kerneltime_usec_pos);
-
-	mif_err("%s: pda_active:0\n", mc->name);
-	mbox_update_value(MCU_CP, mc->mbx_ap_status, 0,
-			mc->sbi_pda_active_mask, mc->sbi_pda_active_pos);
-	mbox_set_interrupt(MCU_CP, mc->int_pda_active);
-#endif
-
-#ifdef CONFIG_LINK_DEVICE_PCIE
 	if (mc->ops.modem_suspend)
-		mc->ops.modem_suspend(mc);
-#endif
+		ret = mc->ops.modem_suspend(mc);
+
 	mif_err("%s\n", mc->name);
 	set_wakeup_packet_log(true);
 
-	return 0;
+	return ret;
 }
 
 static int modem_resume(struct device *pdev)
 {
 	struct modem_ctl *mc = dev_get_drvdata(pdev);
-#ifdef CONFIG_LINK_DEVICE_SHMEM
-	struct modem_mbox *mbox = mc->mdm_data->mbx;
-	struct utc_time t;
-#endif
+	int ret = 0;
 
 	set_wakeup_packet_log(false);
 
@@ -1209,31 +1190,12 @@ static int modem_resume(struct device *pdev)
 	}
 #endif
 
-#ifdef CONFIG_LINK_DEVICE_SHMEM
-	get_utc_time(&t);
-	mif_err("time = %d.%d\n", t.sec + (t.min * 60), t.us);
-	mbox_update_value(MCU_CP, mbox->mbx_ap2cp_kerneltime,
-			t.sec + (t.min * 60),
-			mbox->sbi_ap2cp_kerneltime_sec_mask,
-			mbox->sbi_ap2cp_kerneltime_sec_pos);
-	mbox_update_value(MCU_CP, mbox->mbx_ap2cp_kerneltime, t.us,
-			mbox->sbi_ap2cp_kerneltime_usec_mask,
-			mbox->sbi_ap2cp_kerneltime_usec_pos);
-
-	mif_err("%s: pda_active:1\n", mc->name);
-	mbox_update_value(MCU_CP, mc->mbx_ap_status, 1,
-			mc->sbi_pda_active_mask, mc->sbi_pda_active_pos);
-	mbox_set_interrupt(MCU_CP, mc->int_pda_active);
-#endif
-
-#ifdef CONFIG_LINK_DEVICE_PCIE
 	if (mc->ops.modem_resume)
-		mc->ops.modem_resume(mc);
-#endif
+		ret = mc->ops.modem_resume(mc);
 
 	mif_err("%s\n", mc->name);
 
-	return 0;
+	return ret;
 }
 
 #if defined(CONFIG_PM) && defined(CONFIG_LINK_DEVICE_PCIE)
@@ -1242,7 +1204,7 @@ static int modem_runtime_suspend(struct device *pdev)
 	struct modem_ctl *mc = dev_get_drvdata(pdev);
 
 	if (mc->ops.modem_runtime_suspend != NULL)
-		mc->ops.modem_runtime_suspend(mc);
+		return mc->ops.modem_runtime_suspend(mc);
 
 	return 0;
 }
@@ -1252,7 +1214,7 @@ static int modem_runtime_resume(struct device *pdev)
 	struct modem_ctl *mc = dev_get_drvdata(pdev);
 
 	if (mc->ops.modem_runtime_resume != NULL)
-		mc->ops.modem_runtime_resume(mc);
+		return mc->ops.modem_runtime_resume(mc);
 
 	return 0;
 }

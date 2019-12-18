@@ -166,10 +166,18 @@ enum {
 	TX_DATA_MAX,
 };
 
+enum {
+	EVENT_DC_ERR = 0,
+	EVENT_TA_OCP_DET,
+	EVENT_TA_OCP_ON,
+	EVENT_DATA_MAX,
+};
+
 extern const char *cisd_data_str[];
 extern const char *cisd_data_str_d[];
 extern const char *cisd_cable_data_str[];
 extern const char *cisd_tx_data_str[];
+extern const char *cisd_event_data_str[];
 
 #define PAD_INDEX_STRING	"INDEX"
 #define PAD_INDEX_VALUE		1
@@ -196,6 +204,7 @@ struct cisd {
 	int data[CISD_DATA_MAX_PER_DAY];
 	int cable_data[CISD_CABLE_TYPE_MAX];
 	unsigned int tx_data[TX_DATA_MAX];
+	unsigned int event_data[EVENT_DATA_MAX];
 
 	struct mutex padlock;
 	struct pad_data* pad_array;

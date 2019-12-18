@@ -807,6 +807,7 @@ static void max77705_pd_check_pdmsg(struct max77705_usbc_platform_data *usbc_dat
 {
 	struct power_supply *psy_charger;
 	union power_supply_propval val;
+	usbc_cmd_data value;
 	/*int dr_swap, pr_swap, vcon_swap = 0; u8 value[2], rc = 0;*/
 	MAX77705_VDM_MSG_IRQ_STATUS_Type VDM_MSG_IRQ_State;
 #ifdef CONFIG_USB_NOTIFY_PROC_LOG
@@ -814,6 +815,7 @@ static void max77705_pd_check_pdmsg(struct max77705_usbc_platform_data *usbc_dat
 #endif
 
 	VDM_MSG_IRQ_State.DATA = 0x0;
+	init_usbc_cmd_data(&value);
 	msg_maxim(" pd_msg [%x]", pd_msg);
 
 	switch (pd_msg) {
@@ -935,6 +937,22 @@ static void max77705_pd_check_pdmsg(struct max77705_usbc_platform_data *usbc_dat
 		max77705_manual_jig_on(usbc_data, 1);
 		usbc_data->manual_lpm_mode = 1;
 		msg_maxim("Current_Cable_Connected : [%x]", pd_msg);
+		break;
+	case Status_Received:
+		value.opcode = OPCODE_SAMSUNG_READ_MESSAGE;
+		value.write_data[0] = 0x02;
+		value.write_length = 1;
+		value.read_length = 32;
+		max77705_usbc_opcode_write(usbc_data, &value);
+		msg_maxim("@TA_ALERT: Status Receviced : [%x]", pd_msg);
+		break;
+	case Alert_Message:
+		value.opcode = OPCODE_SAMSUNG_READ_MESSAGE;
+		value.write_data[0] = 0x01;
+		value.write_length = 1;
+		value.read_length = 32;
+		max77705_usbc_opcode_write(usbc_data, &value);
+		msg_maxim("@TA_ALERT: Alert Message : [%x]", pd_msg);
 		break;
 	default:
 		break;

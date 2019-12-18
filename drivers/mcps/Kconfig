@@ -21,7 +21,14 @@ config ARGOS_DEBUG
 	depends on MCPS=y
 	---help---
 		to be continue.
-		
+
+config MCPS_GRO_ENABLE
+    bool "Enable GRO on MCPS"
+    default y
+    depends on MCPS=y
+    ---help---
+        It will allow MCPS to enable Generic Receive Offload(GRO)
+
 config MCTCP_DEBUG_PRINTK
 	bool "MCTCP Debugging printk"
 	default n

@@ -223,6 +223,8 @@ int sec_bat_parse_dt(struct device *dev,
 	pdata->fake_capacity = of_property_read_bool(np,
 						     "battery,fake_capacity");
 
+	battery->ta_alert_wa = of_property_read_bool(np, "battery,ta_alert_wa");
+
 	p = of_get_property(np, "battery,polling_time", &len);
 	if (!p)
 		return 1;

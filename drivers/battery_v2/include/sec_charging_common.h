@@ -91,6 +91,7 @@ enum power_supply_ext_property {
 	POWER_SUPPLY_EXT_PROP_WIRELESS_TIMER_ON,
 	POWER_SUPPLY_EXT_PROP_CALL_EVENT,
 	POWER_SUPPLY_EXT_PROP_CURRENT_EVENT,
+	POWER_SUPPLY_EXT_PROP_CURRENT_EVENT_CLEAR,
 #if defined(CONFIG_BATTERY_SAMSUNG_MHS)
 	POWER_SUPPLY_EXT_PROP_CHARGE_PORT,
 #endif
@@ -108,6 +109,8 @@ enum power_supply_ext_property {
 	POWER_SUPPLY_EXT_PROP_DIRECT_CURRENT_MAX,
 	POWER_SUPPLY_EXT_PROP_DIRECT_FLOAT_MAX,
 	POWER_SUPPLY_EXT_PROP_DIRECT_ADC_CTRL,
+	POWER_SUPPLY_EXT_PROP_DIRECT_HV_PDO,
+	POWER_SUPPLY_EXT_PROP_DIRECT_TA_ALERT,
 #endif
 };
 
@@ -496,6 +499,12 @@ enum charging_port {
 	SUB_PORT,
 };
 #endif
+
+enum ta_alert_mode {
+	OCP_NONE = 0,
+	OCP_DETECT,
+	OCP_WA_ACTIVE,
+};
 
 #define sec_battery_full_charged_t \
 	enum sec_battery_full_charged

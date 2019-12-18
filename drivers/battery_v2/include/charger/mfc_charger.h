@@ -954,6 +954,7 @@ struct mfc_charger_data {
 	bool is_suspend;
 	int tx_id;
 	int tx_id_cnt;
+	bool initial_vrect;
 	/* wireless tx */
 	int tx_status;
 	bool wc_tx_enable;

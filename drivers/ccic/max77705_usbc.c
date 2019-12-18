@@ -65,6 +65,8 @@
 #include <linux/usb/typec.h>
 #endif
 
+#include "../battery_v2/include/sec_charging_common.h"
+
 static enum ccic_sysfs_property max77705_sysfs_properties[] = {
 	CCIC_SYSFS_PROP_CHIP_NAME,
 	CCIC_SYSFS_PROP_CUR_VERSION,
@@ -929,6 +931,109 @@ void max77705_request_sbu_read(struct max77705_usbc_platform_data *usbpd_data)
 	max77705_usbc_opcode_write(usbpd_data, &write_data);
 }
 
+void max77705_request_control3_reg_read(struct max77705_usbc_platform_data *usbpd_data)
+{
+	usbc_cmd_data read_data;
+
+	init_usbc_cmd_data(&read_data);
+	read_data.opcode = OPCODE_CTRLREG3_R;
+	read_data.write_length = 0x0;
+	read_data.read_length = 0x1;
+	max77705_usbc_opcode_read(g_usbc_data, &read_data);
+}
+
+void max77705_set_CCForceError(struct max77705_usbc_platform_data *usbpd_data)
+{
+	usbc_cmd_data write_data;
+
+	init_usbc_cmd_data(&write_data);
+	write_data.opcode = OPCODE_CCCTRL2_W;
+	write_data.write_data[0] = 0x84;
+	write_data.write_length = 0x1;
+	write_data.read_length = 0x0;
+	max77705_usbc_opcode_write(usbpd_data, &write_data);
+}
+
+void max77705_set_lockerroren(struct max77705_usbc_platform_data *usbpd_data,
+	unsigned char data, u8 en)
+{
+	usbc_cmd_data write_data;
+	u8 control3_reg = data;
+
+	init_usbc_cmd_data(&write_data);
+	write_data.opcode = OPCODE_CTRLREG3_W;
+	control3_reg &= ~(0x1 << 1);
+	write_data.write_data[0] = control3_reg | ((en & 0x1) << 1);
+	write_data.write_length = 0x1;
+	write_data.read_length = 0x0;
+	max77705_usbc_opcode_write(usbpd_data, &write_data);
+}
+
+void max77705_control3_read_complete(struct max77705_usbc_platform_data *usbpd_data,
+	unsigned char *data)
+{
+	usbpd_data->control3_reg = data[1];
+	complete(&usbpd_data->op_completion);
+}
+
+void pdic_manual_ccopen_request(int is_on)
+{
+	struct max77705_usbc_platform_data *usbpd_data = g_usbc_data;
+
+	msg_maxim("is_on %d > %d", usbpd_data->cc_open_req, is_on);
+	if (usbpd_data->cc_open_req != is_on) {
+		usbpd_data->cc_open_req = is_on;
+		schedule_work(&usbpd_data->cc_open_req_work);
+	}
+}
+
+static void max77705_cc_open_work_func(
+		struct work_struct *work)
+{
+	struct max77705_usbc_platform_data *usbc_data;
+	u8 lock_err_en;
+#ifdef CONFIG_USB_NOTIFY_PROC_LOG
+	int event;
+#endif
+
+	usbc_data = container_of(work, struct max77705_usbc_platform_data, cc_open_req_work);
+	msg_maxim("%s", usbc_data->cc_open_req? "set":"clear");
+
+	if (usbc_data->cc_open_req) {
+		reinit_completion(&usbc_data->op_completion);
+		max77705_request_control3_reg_read(usbc_data);	/* ref 0x65 -> write 0x67*/
+		if (!wait_for_completion_timeout(&usbc_data->op_completion, msecs_to_jiffies(1000))) {
+			msg_maxim("OPCMD COMPLETION TIMEOUT");
+			return;
+		}
+		lock_err_en = GET_CONTROL3_LOCK_ERROR_EN(usbc_data->control3_reg);
+		msg_maxim("data: 0x%x lock_err_en=%d", usbc_data->control3_reg, lock_err_en);
+		if (!lock_err_en) {
+#ifdef CONFIG_USB_NOTIFY_PROC_LOG
+			event = NOTIFY_EXTRA_CCOPEN_REQ_SET;
+			store_usblog_notify(NOTIFY_EXTRA, (void *)&event, NULL);
+#endif
+			max77705_set_lockerroren(usbc_data, usbc_data->control3_reg, 1);
+		}
+		max77705_set_CCForceError(usbc_data);
+	} else {
+		reinit_completion(&usbc_data->op_completion);
+		max77705_request_control3_reg_read(usbc_data);
+		if (!wait_for_completion_timeout(&usbc_data->op_completion, msecs_to_jiffies(1000)))
+			msg_maxim("OPCMD COMPLETION TIMEOUT");
+
+		lock_err_en = GET_CONTROL3_LOCK_ERROR_EN(usbc_data->control3_reg);
+		msg_maxim("data: 0x%x lock_err_en=%d", usbc_data->control3_reg, lock_err_en);
+		if (lock_err_en) {
+#ifdef CONFIG_USB_NOTIFY_PROC_LOG
+			event = NOTIFY_EXTRA_CCOPEN_REQ_CLEAR;
+			store_usblog_notify(NOTIFY_EXTRA, (void *)&event, NULL);
+#endif
+			max77705_set_lockerroren(usbc_data, usbc_data->control3_reg, 0);
+		}
+	}
+}
+
 void max77705_response_selftest_read(struct max77705_usbc_platform_data *usbpd_data, unsigned char *data)
 {
 	u8 cc = 0;
@@ -1683,6 +1788,20 @@ static void max77705_irq_execute(struct max77705_usbc_platform_data *usbc_data,
 		max77705_response_set_pps(usbc_data, data);
 		break;
 #endif
+	case OPCODE_SAMSUNG_READ_MESSAGE:
+		pr_info("@TA_ALERT: %s : OPCODE[%x] Data[1] = 0x%x Data[7] = 0x%x Data[9] = 0x%x\n",
+			__func__, OPCODE_SAMSUNG_READ_MESSAGE, data[1], data[7], data[9]);
+#if defined(CONFIG_DIRECT_CHARGING)
+		if ((data[0] == 0x5D) &&
+			/* OCP would be set to Alert or Status message */
+			((data[1] == 0x01 && data[7] == 0x04) || (data[1] == 0x02 && (data[9] & 0x02)))) {
+			union power_supply_propval value = {0,};
+			value.intval = true;
+			psy_do_property("battery", set,
+				POWER_SUPPLY_EXT_PROP_DIRECT_TA_ALERT, value);
+		}
+#endif
+		break;
 	case OPCODE_VDM_DISCOVER_GET_VDM_RESP:
 		max77705_vdm_message_handler(usbc_data, data, len + OPCODE_SIZE);
 		break;
@@ -1810,6 +1929,9 @@ static void max77705_irq_execute(struct max77705_usbc_platform_data *usbc_data,
 		}
 		break;
 #endif
+	case OPCODE_CTRLREG3_R:
+			max77705_control3_read_complete(usbc_data, data);
+		break;
 	default:
 		break;
 	}
@@ -3110,6 +3232,7 @@ static int max77705_usbc_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	INIT_WORK(&usbc_data->op_send_work, max77705_uic_op_send_work_func);
+	INIT_WORK(&usbc_data->cc_open_req_work, max77705_cc_open_work_func);
 
 #if defined(CONFIG_CCIC_NOTIFIER)
 	/* Create a work queue for the ccic irq thread */
@@ -3169,6 +3292,8 @@ static int max77705_usbc_probe(struct platform_device *pdev)
 	max77705_set_host_turn_on_event(0);
 	usbc_data->host_turn_on_wait_time = 3;
 
+	usbc_data->cc_open_req = 1;
+	pdic_manual_ccopen_request(0);
 
 	msg_maxim("probing Complete..");
 	return 0;

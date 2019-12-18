@@ -402,6 +402,10 @@ static const char *extra_string(enum extra event)
 		return "SBU VBUS SHORT";
 	case NOTIFY_EXTRA_UVDM_TIMEOUT:
 		return "UVDM TIMEOUT";
+	case NOTIFY_EXTRA_CCOPEN_REQ_SET:
+		return "CC OPEN SET";
+	case NOTIFY_EXTRA_CCOPEN_REQ_CLEAR:
+		return "CC OPEN CLEAR";
 	default:
 		return "ETC";
 	}

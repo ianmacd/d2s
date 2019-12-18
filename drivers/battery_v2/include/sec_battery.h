@@ -88,6 +88,7 @@ extern char *sec_cable_type[];
 #define SEC_BAT_CURRENT_EVENT_SELECT_PDO		0x020000
 #define SEC_BAT_CURRENT_EVENT_FG_RESET			0x040000
 #define SEC_BAT_CURRENT_EVENT_DC_ERR			0x400000
+#define SEC_BAT_CURRENT_EVENT_25W_OCP			0x2000000
 
 /* misc_event */
 #define BATT_MISC_EVENT_UNDEFINED_RANGE_TYPE	0x00000001
@@ -592,6 +593,10 @@ struct sec_battery_info {
 	unsigned long expired_time;
 	unsigned long cal_safety_time;
 	int fg_reset;
+
+	/* 25w ta alert */
+	bool ta_alert_wa;
+	int ta_alert_mode;
 };
 
 /* event check */

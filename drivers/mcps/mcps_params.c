@@ -38,13 +38,15 @@ int mcps_flush_flag __read_mostly = 0;
 module_param_cb(mcps_flush,
         &mcps_flush_ops,
         &mcps_flush_flag,
-        0644);
+        0640);
 
 spinlock_t lock_arps_meta;
 #define MCPS_ARPS_META_STATIC 0
 #define MCPS_ARPS_META_DYNAMIC 1
+#define MCPS_ARPS_META_NEWFLOW 2
 struct arps_meta __rcu *static_arps;
 struct arps_meta __rcu *dynamic_arps;
+struct arps_meta __rcu *newflow_arps;
 
 cpumask_var_t cpu_big_mask;
 cpumask_var_t cpu_little_mask;
@@ -59,10 +61,14 @@ struct arps_meta* get_arps_rcu(void)
     return arps;
 }
 
-struct arps_meta* get_static_arps_rcu(void)
+struct arps_meta* get_newflow_rcu(void)
 {
-    struct arps_meta* arps = rcu_dereference(static_arps);
-    return arps;
+    struct arps_meta* arps = rcu_dereference(newflow_arps);
+    if(arps) {
+        return arps;
+    }
+
+    return get_arps_rcu();
 }
 
 static int create_arps_mask(const char *buf , cpumask_var_t *mask)
@@ -195,6 +201,14 @@ int update_arps_meta(const char * buf , int flag)
             rcu_assign_pointer(dynamic_arps, arps);
             spin_unlock(&lock_arps_meta);
         break;
+        case MCPS_ARPS_META_NEWFLOW :
+            arps = create_arps_meta(buf);
+            spin_lock(&lock_arps_meta);
+            old = rcu_dereference_protected(newflow_arps,
+                    lockdep_is_held(&lock_arps_meta));
+            rcu_assign_pointer(newflow_arps, arps);
+            spin_unlock(&lock_arps_meta);
+        break;
     }
 
     if(old) {
@@ -217,6 +231,9 @@ int get_arps_meta(char *buf , int flag)
         break;
         case MCPS_ARPS_META_DYNAMIC:
             arps = rcu_dereference(dynamic_arps);
+        break;
+        case MCPS_ARPS_META_NEWFLOW:
+            arps = rcu_dereference(newflow_arps);
         break;
     }
 
@@ -255,7 +272,7 @@ void init_mcps_arps_meta (void)
     create_arps_mask("f0", &cpu_big_mask);
     create_arps_mask("f", &cpu_little_mask);
 
-    //default _ static/dynamic_map
+    //MCPS_ARPS_META_STATIC
     spin_lock(&lock_arps_meta);
     old = rcu_dereference_protected(static_arps,
             lockdep_is_held(&lock_arps_meta));
@@ -267,10 +284,23 @@ void init_mcps_arps_meta (void)
         release_arps_meta(old);
     }
 
+    //MCPS_ARPS_META_DYNAMIC
     spin_lock(&lock_arps_meta);
     old = rcu_dereference_protected(dynamic_arps,
             lockdep_is_held(&lock_arps_meta));
     rcu_assign_pointer(dynamic_arps, NULL);
+    spin_unlock(&lock_arps_meta);
+
+    if(old) {
+        synchronize_rcu();
+        release_arps_meta(old);
+    }
+
+    //MCPS_ARPS_META_NEWFLOW
+    spin_lock(&lock_arps_meta);
+    old = rcu_dereference_protected(newflow_arps,
+            lockdep_is_held(&lock_arps_meta));
+    rcu_assign_pointer(newflow_arps, NULL);
     spin_unlock(&lock_arps_meta);
 
     if(old) {
@@ -286,6 +316,7 @@ void release_mcps_arps_meta (void)
     free_cpumask_var(cpu_big_mask);
     free_cpumask_var(cpu_little_mask);
 
+    //MCPS_ARPS_META_STATIC
     spin_lock(&lock_arps_meta);
     old = rcu_dereference_protected(static_arps,
             lockdep_is_held(&lock_arps_meta));
@@ -297,10 +328,23 @@ void release_mcps_arps_meta (void)
         release_arps_meta(old);
     }
 
+    //MCPS_ARPS_META_DYNAMIC
     spin_lock(&lock_arps_meta);
     old = rcu_dereference_protected(dynamic_arps,
             lockdep_is_held(&lock_arps_meta));
     rcu_assign_pointer(dynamic_arps, NULL);
+    spin_unlock(&lock_arps_meta);
+
+    if(old) {
+        synchronize_rcu();
+        release_arps_meta(old);
+    }
+
+    //MCPS_ARPS_META_NEWFLOW
+    spin_lock(&lock_arps_meta);
+    old = rcu_dereference_protected(newflow_arps,
+            lockdep_is_held(&lock_arps_meta));
+    rcu_assign_pointer(newflow_arps, NULL);
     spin_unlock(&lock_arps_meta);
 
     if(old) {
@@ -355,7 +399,7 @@ int dummy_mcps_rfs_buckets = 0;
 module_param_cb(mcps_rfs_buckets,
         &mcps_rfs_buckets_ops,
         &dummy_mcps_rfs_buckets,
-        0644);
+        0640);
 // -- file write
 
 int get_mcps_heavy_flow (char *buffer , const struct kernel_param *kp)
@@ -410,7 +454,7 @@ int dummy_mcps_heavy_flows = 0;
 module_param_cb(mcps_heavy_flows,
         &mcps_heavy_flow_ops,
         &dummy_mcps_heavy_flows,
-        0644);
+        0640);
 
 int get_mcps_light_flow (char *buffer , const struct kernel_param *kp)
 {
@@ -462,7 +506,7 @@ int dummy_mcps_light_flows = 0;
 module_param_cb(mcps_light_flows,
         &mcps_light_flow_ops,
         &dummy_mcps_light_flows,
-        0644);
+        0640);
 
 int set_mcps_move (const char * val , const struct kernel_param *kp)
 {
@@ -517,7 +561,7 @@ int dummy_mcps_moveif = 0;
 module_param_cb(mcps_move,
         &mcps_move_ops,
         &dummy_mcps_moveif,
-        0644);
+        0640);
 
 static int mcps_store_rps_map(struct netdev_rx_queue *queue, const char *buf, size_t len)
 {
@@ -630,7 +674,7 @@ int dummy_mcps_rps_config = 0;
 module_param_cb(mcps_rps_config,
         &mcps_rps_config_ops,
         &dummy_mcps_rps_config,
-        0644);
+        0640);
 
 int set_mcps_arps_cpu (const char * val , const struct kernel_param *kp)
 {
@@ -657,7 +701,31 @@ int dummy_mcps_arps_cpu = 0;
 module_param_cb(mcps_arps_cpu,
         &mcps_arps_cpu_ops,
         &dummy_mcps_arps_cpu,
-        0644);
+        0640);
+
+int set_mcps_newflow_cpu (const char * val , const struct kernel_param *kp)
+{
+    size_t len = update_arps_meta(val, MCPS_ARPS_META_NEWFLOW);
+    return len;
+}
+
+int get_mcps_newflow_cpu (char *buffer , const struct kernel_param *kp)
+{
+    size_t len = get_arps_meta(buffer, MCPS_ARPS_META_NEWFLOW);
+    return len;
+}
+
+const struct kernel_param_ops mcps_newflow_cpu_ops =
+{
+    .set = &set_mcps_newflow_cpu,
+    .get = &get_mcps_newflow_cpu,
+};
+
+int dummy_mcps_newflow_cpu = 0;
+module_param_cb(mcps_newflow_cpu,
+        &mcps_newflow_cpu_ops,
+        &dummy_mcps_newflow_cpu,
+        0640);
 
 int set_mcps_dynamic_cpu (const char * val , const struct kernel_param *kp)
 {
@@ -683,7 +751,7 @@ int dummy_mcps_dynamic_cpu = 0;
 module_param_cb(mcps_dynamic_cpu,
         &mcps_dynamic_cpu_ops,
         &dummy_mcps_dynamic_cpu,
-        0644);
+        0640);
 
 static DEFINE_SPINLOCK(lock_mcps_arps_config);
 int set_mcps_arps_config (const char * val , const struct kernel_param *kp)
@@ -797,7 +865,7 @@ int dummy_mcps_arps_config = 0;
 module_param_cb(mcps_arps_config,
         &mcps_arps_config_ops,
         &dummy_mcps_arps_config,
-        0644);
+        0640);
 
 
 int get_mcps_enqueued (char *buffer , const struct kernel_param *kp)
@@ -811,7 +879,7 @@ int get_mcps_enqueued (char *buffer , const struct kernel_param *kp)
         len += scnprintf(buffer + len, PAGE_SIZE, "%d ", pantry->enqueued);
     }
 
-#ifdef CONFIG_MODEM_IF_NET_GRO
+#ifdef CONFIG_MCPS_GRO_ENABLE
     len += scnprintf(buffer + len, PAGE_SIZE, "\n");
 
     for (cpu = 0; cpu < NR_CPUS; cpu++) {
@@ -834,7 +902,7 @@ int dummy_mcps_enqueued = 0;
 module_param_cb(mcps_stat_enqueued,
         &mcps_enqueued_ops,
         &dummy_mcps_enqueued,
-        0644);
+        0640);
 
 int get_mcps_processed (char *buffer , const struct kernel_param *kp)
 {
@@ -847,7 +915,7 @@ int get_mcps_processed (char *buffer , const struct kernel_param *kp)
         len += scnprintf(buffer + len, PAGE_SIZE, "%d ", pantry->processed);
     }
 
-#ifdef CONFIG_MODEM_IF_NET_GRO
+#ifdef CONFIG_MCPS_GRO_ENABLE
     len += scnprintf(buffer + len, PAGE_SIZE, "\n");
 
     for (cpu = 0; cpu < NR_CPUS; cpu++) {
@@ -876,7 +944,7 @@ int dummy_mcps_processed = 0;
 module_param_cb(mcps_stat_processed,
         &mcps_processed_ops,
         &dummy_mcps_processed,
-        0644);
+        0640);
 
 int get_mcps_dropped (char *buffer , const struct kernel_param *kp)
 {
@@ -906,7 +974,7 @@ int dummy_mcps_dropped = 0;
 module_param_cb(mcps_stat_dropped,
         &mcps_dropped_ops,
         &dummy_mcps_dropped,
-        0644);
+        0640);
 
 int get_mcps_ignored (char *buffer , const struct kernel_param *kp)
 {
@@ -922,7 +990,7 @@ int get_mcps_ignored (char *buffer , const struct kernel_param *kp)
         len += scnprintf(buffer + len, PAGE_SIZE, " ");
     }
 
-#ifdef CONFIG_MODEM_IF_NET_GRO
+#ifdef CONFIG_MCPS_GRO_ENABLE
     len += scnprintf(buffer + len, PAGE_SIZE, "\n");
     for (cpu = 0; cpu < NR_CPUS; cpu++) {
         pantry = &per_cpu(mcps_gro_pantries, cpu);
@@ -947,7 +1015,7 @@ int dummy_mcps_ignored = 0;
 module_param_cb(mcps_stat_ignored,
         &mcps_ignored_ops,
         &dummy_mcps_ignored,
-        0644);
+        0640);
 
 int get_mcps_distributed (char *buffer , const struct kernel_param *kp)
 {
@@ -978,7 +1046,7 @@ int dummy_mcps_distributed = 0;
 module_param_cb(mcps_stat_distributed,
         &mcps_distributed_ops,
         &dummy_mcps_distributed,
-        0644);
+        0640);
 
 int get_mcps_sauron_target_flow (char *buffer , const struct kernel_param *kp)
 {
@@ -1017,7 +1085,7 @@ int dummy_mcps_sauron_target_flow = 0;
 module_param_cb(mcps_stat_sauron_target_flow,
         &mcps_sauron_target_flow_ops,
         &dummy_mcps_sauron_target_flow,
-        0644);
+        0640);
 
 int get_mcps_sauron_flow (char *buffer , const struct kernel_param *kp)
 {
@@ -1056,7 +1124,7 @@ int dummy_mcps_sauron_flow = 0;
 module_param_cb(mcps_stat_sauron_flow,
         &mcps_sauron_flow_ops,
         &dummy_mcps_sauron_flow,
-        0644);
+        0640);
 
 
 static DEFINE_SPINLOCK(lock_mcps_mode);
@@ -1148,7 +1216,7 @@ int dummy_mcps_mode = 0;
 module_param_cb(mcps_mode,
         &mcps_mode_ops,
         &dummy_mcps_mode,
-        0644);
+        0640);
 
 static int create_and_init_arps_config(struct mcps_config* mcps)
 {

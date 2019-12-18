@@ -315,6 +315,9 @@ static int pktproc_get_usage(struct pktproc_queue *q)
 		break;
 	}
 
+	if (q->q_info->num_desc - usage < 50)
+		mif_err_limited("could be buffer shortage... %d\n", usage);
+
 	return usage;
 }
 

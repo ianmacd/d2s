@@ -103,6 +103,7 @@ static void exynos_pcie_assert_phy_reset(struct pcie_port *pp);
 void exynos_pcie_host_v1_send_pme_turn_off(struct exynos_pcie *exynos_pcie);
 void exynos_pcie_host_v1_poweroff(int ch_num);
 int exynos_pcie_host_v1_poweron(int ch_num);
+int exynos_pcie_host_v1_lanechange(int ch_num, int lane);
 static int exynos_pcie_wr_own_conf(struct pcie_port *pp, int where, int size,
 				u32 val);
 static int exynos_pcie_rd_own_conf(struct pcie_port *pp, int where, int size,
@@ -118,6 +119,7 @@ static void exynos_pcie_set_gpio_for_SSD(void);
 /* Get EP pci_dev structure of BUS 1 */
 static struct pci_dev *exynos_pcie_get_pci_dev(struct pcie_port *pp)
 {
+	int domain_num;
 	struct pci_bus *ep_pci_bus;
 	static struct pci_dev *ep_pci_dev;
 	struct dw_pcie *pci = to_dw_pcie_from_pp(pp);
@@ -128,10 +130,15 @@ static struct pci_dev *exynos_pcie_get_pci_dev(struct pcie_port *pp)
 		return ep_pci_dev;
 
 	/* Get EP vendor/device ID to get pci_dev structure */
-	if (exynos_pcie->ip_ver == 0x982000)
-		/* Exynos9820:find bus: (Domain ,Bus)=(0, 1:wifi)&(1, 1:s5100) */
-		ep_pci_bus = pci_find_bus(1, 1);
-	else
+	if (exynos_pcie->ip_ver == 0x982000) {
+		/* Exynos9820:find bus: (Domain ,Bus)
+		 * wifi & modem: (0, 1: wifi)&(1, 1: modem)
+		 * modem only: (0, 1: modem)
+		 * wifi only: (0, 1: wifi)
+		 */
+		domain_num = exynos_pcie->pci_dev->bus->domain_nr;
+		ep_pci_bus = pci_find_bus(domain_num, 1);
+	} else
 		ep_pci_bus = pci_find_bus(0, 1);
 
 	exynos_pcie_rd_other_conf(pp, ep_pci_bus, 0, PCI_VENDOR_ID, 4, &val);
@@ -190,37 +197,40 @@ static int exynos_pcie_set_l1ss(int enable, struct pcie_port *pp, int id)
 
 		if (exynos_pcie->l1ss_ctrl_id_state == 0) {
 
-			/* 1. RC L1SS Enable */
+			/* RC & EP L1SS & ASPM setting */
+
+			/* 1-1. RC: set L1SS */
 			exynos_pcie_rd_own_conf(pp, PCIE_LINK_L1SS_CONTROL, 4, &val);
-			/* dev_err(pci->dev, "L1SS_CONTROL (RC_read)=0x%x\n", val);->val=0xa00 */
-				/* setting value:
-				 * val |= PORT_LINK_TCOMMON_32US | PORT_LINK_L1SS_ENABLE | 0x40a00000;
-				 */
+			/* DBG: dev_err(pci->dev, "L1SS_CONTROL (RC_read)=0x%x\n", val); ->val=0xa00 */
+				/* Actual TCOMMON value is 42 us (val = 0x2a << 8) */
 			val |= PORT_LINK_TCOMMON_32US | PORT_LINK_L1SS_ENABLE;
-				/* Set LTR L1.2 THRESHOLD for RC: 160 usec
-				 * 160 x 1024 nsec = about 160 usec
-				 */
-		//	val |= LTR_L12_THRESHOLD_VALUE_160 | LTR_L12_THRESHOLD_SCALE_1024NS;
-				/* DBG: expected value = 0x40a0200f */
-			/* dev_err(pci->dev, "RC L1SS_CONTORL(enalbe_write)=0x%x\n", val); */
+			/* DBG: dev_err(pci->dev, "RC L1SS_CONTORL(enalbe_write)=0x%x\n", val); */
 			exynos_pcie_wr_own_conf(pp, PCIE_LINK_L1SS_CONTROL, 4, val);
 
-			/* Set TPOWERON value for RC: 90->130 usec */
+			/* 1-2. RC: set TPOWERON */
+				/* Set TPOWERON value for RC: 90->130 usec */
 			exynos_pcie_wr_own_conf(pp, PCIE_LINK_L1SS_CONTROL2, 4,
 					PORT_LINK_TPOWERON_130US);
+
 			/* exynos_pcie_wr_own_conf(pp, PCIE_L1_SUBSTATES_OFF, 4,
 			 * PCIE_L1_SUB_VAL);
 			 */
+
+			/* 1-3. RC: set LTR_EN */
 			exynos_pcie_wr_own_conf(pp, exp_cap_off + PCI_EXP_DEVCTL2, 4,
 					PCI_EXP_DEVCTL2_LTR_EN);
-			/* EP LTR EN */
-			pci_read_config_dword(ep_pci_dev, 0x98, &val);
-			pci_write_config_dword(ep_pci_dev, 0x98, val | (1 << 10));
 
+			/* 2-1. EP: set LTR_EN (reg_addr = 0x98) */
+			pci_read_config_dword(ep_pci_dev, exp_cap_off + PCI_EXP_DEVCTL2, &val);
+			val |= PCI_EXP_DEVCTL2_LTR_EN;
+			pci_write_config_dword(ep_pci_dev, exp_cap_off + PCI_EXP_DEVCTL2, val);
+
+			/* 2-2. EP: set TPOWERON */
 				/* Set TPOWERON value for EP: 90->130 usec */
 			pci_write_config_dword(ep_pci_dev, PCIE_LINK_L1SS_CONTROL2,
 					PORT_LINK_TPOWERON_130US);
 
+			/* 2-3. EP: set Enterance latency */
 				/* Set L1.2 Enterance Latency for EP: 64 usec */
 			pci_read_config_dword(ep_pci_dev, PCIE_ACK_F_ASPM_CONTROL, &val);
 			val &= ~PCIE_L1_ENTERANCE_LATENCY;
@@ -228,22 +238,11 @@ static int exynos_pcie_set_l1ss(int enable, struct pcie_port *pp, int id)
 			pci_write_config_dword(ep_pci_dev, PCIE_ACK_F_ASPM_CONTROL, val);
 
 
-				/* Set LTR L1.2 THRESHOLD for EP: 160 usec
-				 * 160 x 1024 nsec = about 160 usec)
-				 */
+			/* 2-4. EP: set L1SS */
 			pci_read_config_dword(ep_pci_dev, PCIE_LINK_L1SS_CONTROL, &val);
-			dev_err(pci->dev, "Before EP L1SS_CONTORL(0x168)=0x%x\n", val);
-			val |=  PORT_LINK_L1SS_ENABLE;
-		//	val |= LTR_L12_THRESHOLD_VALUE_160 | LTR_L12_THRESHOLD_SCALE_1024NS;
-				/* DBG: expected value = 0x40a0200f */
-			/* dev_err(pci->dev, "EP LTR L1.2 THRESHOLD=0x%x\n", val); */
+			val |= PORT_LINK_L1SS_ENABLE;
+			/* DBG: dev_err(pci->dev, "EP L1SS_CONTORL = 0x%x\n", val); */
 			pci_write_config_dword(ep_pci_dev, PCIE_LINK_L1SS_CONTROL, val);
-
-
-			/* 2. EP L1SS Enable  */
-			pci_write_config_dword(ep_pci_dev, PCIE_LINK_L1SS_CONTROL, val);
-			pci_read_config_dword(ep_pci_dev, PCIE_LINK_L1SS_CONTROL, &val);
-			dev_err(pci->dev, "After EP L1SS_CONTORL(0x168)=0x%x\n", val);
 
 			/* 3. RC ASPM Enable*/
 			exynos_pcie_rd_own_conf(pp, exp_cap_off + PCI_EXP_LNKCTL, 4, &val);
@@ -254,12 +253,9 @@ static int exynos_pcie_set_l1ss(int enable, struct pcie_port *pp, int id)
 
 			/* 4. EP ASPM Enable */
 			pci_read_config_dword(ep_pci_dev, PCIE_LINK_CTRL_STAT, &val);
-			dev_err(pci->dev, "Before EP PCIE_LINK_CTRL_STAT(0x80)=0x%x\n", val);
 			val |= PCI_EXP_LNKCTL_CCC | PCI_EXP_LNKCTL_CLKREQ_EN |
 					PCI_EXP_LNKCTL_ASPM_L1;
 			pci_write_config_dword(ep_pci_dev, PCIE_LINK_CTRL_STAT, val);
-			pci_read_config_dword(ep_pci_dev, PCIE_LINK_CTRL_STAT, &val);
-			dev_err(pci->dev, "After EP PCIE_LINK_CTRL_STAT(0x80)=0x%x\n", val);
 
 			/* DBG:
 			 * dev_info(pci->dev, "(%s): l1ss_enabled(l1ss_ctrl_id_state = 0x%x)\n",
@@ -334,7 +330,7 @@ void exynos_pcie_host_v1_register_dump(int ch_num)
 	pr_err("Print ELBI(Sub_Controller) region...\n");
 	for (i = 0; i < 45; i++) {
 		for (j = 0; j < 4; j++) {
-			if (((i * 0x10) + (j * 4)) < 0x2C4) {
+			if (((i * 0x10) + (j * 4)) < 0x2D0) {
 				pr_err("ELBI 0x%04x : 0x%08x\n",
 					(i * 0x10) + (j * 4),
 					exynos_elbi_read(exynos_pcie,
@@ -1129,7 +1125,7 @@ static int exynos_pcie_establish_link(struct pcie_port *pp)
 	struct dw_pcie *pci = to_dw_pcie_from_pp(pp);
 	struct exynos_pcie *exynos_pcie = to_exynos_pcie(pci);
 	struct device *dev = pci->dev;
-	u32 val, busdev;
+	u32 val, busdev, lane_num;
 	int count = 0, try_cnt = 0;
 retry:
 	/* avoid checking rx elecidle when access DBI */
@@ -1189,9 +1185,6 @@ retry:
 	/* force_pclk_en & cpm_delay */
 	writel(0x0C, exynos_pcie->phy_pcs_base + 0x0180);
 	writel(0x18500000, exynos_pcie->phy_pcs_base + 0x0114);
-
-//	exynos_phy_pcs_write(exynos_pcie, 0x18500000, 0x114);
-//	exynos_phy_pcs_write(exynos_pcie, 0xc, 0x180);
 
 	/* assert LTSSM enable */
 	exynos_elbi_write(exynos_pcie, PCIE_ELBI_LTSSM_ENABLE,
@@ -1268,6 +1261,11 @@ retry:
 				BUG_ON(1);
 			}
 		}
+
+		exynos_pcie_rd_own_conf(pp, PCIE_LINK_CTRL_STAT, 4, &lane_num);
+		lane_num = lane_num >> 20;
+		lane_num &= PCIE_CAP_NEGO_LINK_WIDTH_MASK;
+		dev_info(dev, "Current lane_num(0x80) : %d\n", lane_num);
 
 		val = exynos_elbi_read(exynos_pcie, PCIE_IRQ0);
 		exynos_elbi_write(exynos_pcie, val, PCIE_IRQ0);
@@ -2266,6 +2264,78 @@ static void exynos_pcie_resumed_phydown(struct pcie_port *pp)
 #endif
 	exynos_pcie_clock_enable(pp, PCIE_DISABLE_CLOCK);
 }
+
+int exynos_pcie_host_v1_lanechange(int ch_num, int lane) {
+	struct exynos_pcie *exynos_pcie = &g_pcie_host_v1[ch_num];
+	struct dw_pcie *pci = exynos_pcie->pci;
+	struct pcie_port *pp = &pci->pp;
+	struct pci_bus *ep_pci_bus;
+	int i;
+	u32 val, lane_num;
+
+	if (exynos_pcie->state != STATE_LINK_UP) {
+		dev_err(pci->dev, "Link is not up\n");
+		return 1;
+	}
+
+	if (lane > 2 || lane < 1) {
+		dev_err(pci->dev, "Unable to change to %d lane\n", lane);
+		return 1;
+	}
+
+	exynos_pcie_rd_own_conf(pp, PCIE_LINK_CTRL_STAT, 4, &lane_num);
+	lane_num = lane_num >> 20;
+	lane_num &= PCIE_CAP_NEGO_LINK_WIDTH_MASK;
+	dev_info(pci->dev, "Current lane_num(0x80) : from %d lane\n", lane_num);
+
+	if (lane_num == lane) {
+		dev_err(pci->dev, "Already changed to %d lane\n", lane);
+		return 1;
+	}
+
+	//modify register to change lane num
+	ep_pci_bus = pci_find_bus(exynos_pcie->pci_dev->bus->domain_nr, 1);
+	exynos_pcie_rd_other_conf(pp, ep_pci_bus, 0, PCI_VENDOR_ID, 4, &val);
+
+	exynos_pcie_rd_own_conf(pp, MULTI_LANE_CONTROL_OFF, 4, &val);
+	val = val & TARGET_LINK_WIDTH_MASK;
+	val = val | lane;
+	exynos_pcie_wr_own_conf(pp, MULTI_LANE_CONTROL_OFF, 4, val);
+
+	exynos_pcie_rd_own_conf(pp, MULTI_LANE_CONTROL_OFF, 4, &val);
+	val = val | DIRECT_LINK_WIDTH_CHANGE_MASK;
+	exynos_pcie_wr_own_conf(pp, MULTI_LANE_CONTROL_OFF, 4, val);
+
+	if (lane == 2) {
+		for (i = 0; i < MAX_TIMEOUT_LANECHANGE; i++) {
+			val = exynos_elbi_read(exynos_pcie, PCIE_ELBI_RDLH_LINKUP) & 0x3f;
+
+			if (val == 0x11)
+				break;
+			udelay(10);
+		}
+	}
+
+	for (i = 0; i < MAX_TIMEOUT_LANECHANGE; i++) {
+		exynos_pcie_rd_own_conf(pp, PCIE_LINK_CTRL_STAT, 4, &lane_num);
+		lane_num = lane_num >> 20;
+		lane_num &= PCIE_CAP_NEGO_LINK_WIDTH_MASK;
+
+		if (lane_num == lane)
+			break;
+		udelay(10);
+	}
+
+	if (lane_num != lane) {
+		dev_err(pci->dev, "Unable to change to %d lane\n", lane);
+		return 1;
+	}
+
+	dev_info(pci->dev, "Changed lane_num(0x80) : to %d lane\n", lane_num);
+
+	return 0;
+}
+EXPORT_SYMBOL(exynos_pcie_host_v1_lanechange);
 
 int exynos_pcie_host_v1_poweron(int ch_num)
 {

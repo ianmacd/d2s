@@ -13,27 +13,23 @@
 #include "mcps_debug.h"
 #include "mcps_fl.h"
 
-#ifdef CONFIG_MCPS_DEBUG_SYSTRACE
-#include <trace/events/mcps_if.h>
-#endif
-
 int create_mcps(void);
 void release_mcps(void);
 
 int mcps_enable __read_mostly = 0;
-module_param(mcps_enable , int , 0644);
+module_param(mcps_enable , int , 0640);
 
 int mcps_pantry_max_capability __read_mostly = 30000;
-module_param(mcps_pantry_max_capability , int , 0644);
+module_param(mcps_pantry_max_capability , int , 0640);
 int mcps_pantry_quota __read_mostly = 300;
-module_param(mcps_pantry_quota , int , 0644);
+module_param(mcps_pantry_quota , int , 0640);
 
 unsigned int num_mcps_dev __read_mostly = 1;
-module_param(num_mcps_dev , int , 0644);
+module_param(num_mcps_dev , int , 0640);
 
 #ifdef CONFIG_MCTCP_DEBUG_PRINTK
 int mcps_print_BBB __read_mostly = 0;
-module_param(mcps_print_BBB , int , 0644);
+module_param(mcps_print_BBB , int , 0640);
 #endif
 
 DEFINE_PER_CPU_ALIGNED(struct mcps_pantry , mcps_pantries);
@@ -42,13 +38,11 @@ EXPORT_PER_CPU_SYMBOL(mcps_pantries);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0))
 void mcps_napi_complete(struct napi_struct *n)
 {
-    struct softnet_data *sd = this_cpu_ptr(&softnet_data);
-
     BUG_ON(!test_bit(NAPI_STATE_SCHED, &n->state));
 
     list_del_init(&n->poll_list);
     smp_mb__before_atomic();
-    sd->current_napi = NULL;
+
     clear_bit(NAPI_STATE_SCHED, &n->state);
 }
 #endif
@@ -106,12 +100,13 @@ static int process_pantry(struct napi_struct *napi , int quota)
         struct sk_buff *skb;
 
         while ((skb = __skb_dequeue(&pantry->process_queue))) {
+            mcps_out_packet(skb);
             __this_cpu_inc(mcps_pantries.processed);
             netif_receive_skb(skb); //This function may only be called from softirq context and interrupts should be enabled. Ref.function description
 
             if (++work >= quota) {
                 PRINT_WORKED(pantry->cpu , work , quota);
-                return work;
+                goto end;
             }
         }
 
@@ -139,6 +134,7 @@ static int process_pantry(struct napi_struct *napi , int quota)
 
     check_pending_info(pantry->cpu , pantry->processed, 0);
 
+end:
     return work;
 }
 
@@ -243,7 +239,7 @@ static int mcps_try_skb_internal(struct sk_buff *skb)
         goto error;
     }
 
-    return NET_RX_SUCCESS;
+    return ret;
 error:
     PRINT_TRY_FAIL(hash , cpu);
     return NET_RX_DROP;
@@ -264,8 +260,7 @@ int mcps_cpu_startup_callback(unsigned int ocpu)
     unsigned int oldcpu = ocpu;
 
     hotplug_on(oldcpu, 0 , 0);
-    MCPS_DEBUG("[%u] : CPU[%u] - HOTPLUGGED ON\n"
-                ,smp_processor_id_safe(), oldcpu);
+
     return 0;
 }
 
@@ -616,7 +611,7 @@ static int mcps_init(void)
     }
 
     init_mcps_core();
-#ifdef CONFIG_MODEM_IF_NET_GRO
+#ifdef CONFIG_MCPS_GRO_ENABLE
     mcps_gro_init(mcps_device);
 #endif
     init_mcps_notifys();
@@ -637,7 +632,7 @@ static void mcps_exit(void)
         }
     }
 
-#ifdef CONFIG_MODEM_IF_NET_GRO
+#ifdef CONFIG_MCPS_GRO_ENABLE
     mcps_gro_exit();
 #endif
     release_mcps_core();

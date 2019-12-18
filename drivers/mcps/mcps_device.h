@@ -68,19 +68,16 @@ struct mcps_pantry
     struct sk_buff_head input_pkt_queue;
     struct napi_struct  rx_napi_struct;
 
-#ifdef CONFIG_MODEM_IF_NET_GRO
     unsigned int        gro_processed;
     struct timespec     flush_time;
-#endif
+
 };
 
 extern u32 cpu_distributed[NR_CPUS];
 
 DECLARE_PER_CPU_ALIGNED(struct mcps_pantry , mcps_pantries);
 
-#ifdef CONFIG_MODEM_IF_NET_GRO
 DECLARE_PER_CPU_ALIGNED(struct mcps_pantry , mcps_gro_pantries);
-#endif
 
 static inline void pantry_lock(struct mcps_pantry *pantry)
 {
@@ -104,7 +101,9 @@ struct arps_meta {
 
 extern struct arps_meta __rcu *static_arps;
 extern struct arps_meta __rcu *dynamic_arps;
+extern struct arps_meta __rcu *newflow_arps;
 extern struct arps_meta* get_arps_rcu(void);
+extern struct arps_meta* get_newflow_rcu(void);
 extern struct arps_meta* get_static_arps_rcu(void);
 
 #define NUM_FACTORS 5
@@ -141,12 +140,8 @@ struct mcps_config {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0))
 #else
     struct notifier_block       *mcps_cpu_notifier;
-#endif
-
-#ifdef CONFIG_MODEM_IF_NET_GRO
     struct notifier_block       *mcps_gro_cpu_notifier;
 #endif
-
     struct rcu_head rcu;
 } ____cacheline_aligned_in_smp;
 

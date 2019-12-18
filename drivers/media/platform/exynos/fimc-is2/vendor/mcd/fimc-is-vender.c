@@ -1354,21 +1354,7 @@ int fimc_is_vender_fw_filp_open(struct fimc_is_vender *vender, struct file **fp,
 	core = container_of(vender, struct fimc_is_core, vender);
 	memset(fw_path, 0x00, sizeof(fw_path));
 
-	if (bin_type == FIMC_IS_BIN_FW) {
-		if (is_dumped_fw_loading_needed) {
-			snprintf(fw_path, sizeof(fw_path),
-					"%s%s", FIMC_IS_FW_DUMP_PATH, sysfs_finfo->load_fw_name);
-			*fp = filp_open(fw_path, O_RDONLY, 0);
-			if (IS_ERR_OR_NULL(*fp)) {
-				*fp = NULL;
-				ret = FW_FAIL;
-			} else {
-				ret = FW_SUCCESS;
-			}
-		} else {
-			ret = FW_SKIP;
-		}
-	} else if (bin_type == FIMC_IS_BIN_SETFILE) {
+	if (bin_type == IS_BIN_SETFILE) {
 		if (is_dumped_fw_loading_needed) {
 #ifdef CAMERA_MODULE_FRONT_SETF_DUMP
 			if (core->current_position == SENSOR_POSITION_FRONT) {
@@ -1882,18 +1868,25 @@ int fimc_is_vender_video_s_ctrl(struct v4l2_control *ctrl,
 		ctrl->id = VENDER_S_CTRL;
 		value = (unsigned int)ctrl->value;
 		captureIntent = (value >> 16) & 0x0000FFFF;
-		if (captureIntent == AA_CAPTURE_INTENT_STILL_CAPTURE_DEBLUR_DYNAMIC_SHOT
-			|| captureIntent == AA_CAPTURE_INTENT_STILL_CAPTURE_OIS_DYNAMIC_SHOT
-			|| captureIntent == AA_CAPTURE_INTENT_STILL_CAPTURE_EXPOSURE_DYNAMIC_SHOT
-			|| captureIntent == AA_CAPTURE_INTENT_STILL_CAPTURE_MFHDR_DYNAMIC_SHOT
-			|| captureIntent == AA_CAPTURE_INTENT_STILL_CAPTURE_LLHDR_DYNAMIC_SHOT
-			|| captureIntent == AA_CAPTURE_INTENT_STILL_CAPTURE_SUPER_NIGHT_SHOT_HANDHELD
-			|| captureIntent == AA_CAPTURE_INTENT_STILL_CAPTURE_SUPER_NIGHT_SHOT_TRIPOD) {
+		switch (captureIntent) {
+		case AA_CAPTURE_INTENT_STILL_CAPTURE_DEBLUR_DYNAMIC_SHOT:
+		case AA_CAPTURE_INTENT_STILL_CAPTURE_OIS_DYNAMIC_SHOT:
+		case AA_CAPTURE_INTENT_STILL_CAPTURE_EXPOSURE_DYNAMIC_SHOT:
+		case AA_CAPTURE_INTENT_STILL_CAPTURE_MFHDR_DYNAMIC_SHOT:
+		case AA_CAPTURE_INTENT_STILL_CAPTURE_LLHDR_DYNAMIC_SHOT:
+		case AA_CAPTURE_INTENT_STILL_CAPTURE_SUPER_NIGHT_SHOT_HANDHELD:
+		case AA_CAPTURE_INTENT_STILL_CAPTURE_SUPER_NIGHT_SHOT_TRIPOD:
+		case AA_CAPTURE_INTENT_STILL_CAPTURE_LLHDR_VEHDR_DYNAMIC_SHOT:
+		case AA_CAPTURE_INTENT_STILL_CAPTURE_VENR_DYNAMIC_SHOT:
+		case AA_CAPTURE_INTENT_STILL_CAPTURE_LLS_FLASH:
 			captureCount = value & 0x0000FFFF;
-		} else {
+			break;
+		default:
 			captureIntent = ctrl->value;
 			captureCount = 0;
+			break;
 		}
+
 		device->group_3aa.intent_ctl.captureIntent = captureIntent;
 		device->group_3aa.intent_ctl.vendor_captureCount = captureCount;
 
