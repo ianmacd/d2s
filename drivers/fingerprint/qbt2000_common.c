@@ -95,6 +95,9 @@ static ssize_t fps_qbt2000_cbgecnt_store(struct device *dev,
 
 	if (sysfs_streq(buf, "c")) {
 		drvdata->cbge_count = 0;
+#ifdef QBT2000_AVOID_NOISE
+		drvdata->ignored_cbge_count = 0;
+#endif
 		pr_info("initialization is done\n");
 	} else if (sysfs_streq(buf, "wuhb")) {
 	/* For User HwModuleTest IntTest */
@@ -214,6 +217,48 @@ int fps_resume_set(void) {
 
 	if (fpsensor_goto_suspend)
 		fpsensor_goto_suspend = 0;
+	return rc;
+}
+#endif
+
+#ifdef QBT2000_AVOID_NOISE
+static int fps_qbt2000_noise_control(struct qbt2000_drvdata *drvdata, int control)
+{
+	int retry = 3;
+	int rc = 0;
+
+	if (control == 1) {
+		drvdata->noise_onoff_flag = QBT2000_NOISE_ON;
+		rc = set_wacom_ble_charge_mode(true);
+		pr_info("%d, rc:%d\n", control, rc);
+		if (drvdata->delayed_work_on_flag == true) {
+			cancel_delayed_work(&drvdata->delayed_work_noiseon);
+			drvdata->delayed_work_on_flag= false;
+		}
+	} else if ((control == 0) && (drvdata->noise_onoff_flag == QBT2000_NOISE_ON)) {
+		drvdata->noise_onoff_flag = QBT2000_NOISE_OFF;
+		schedule_delayed_work(&drvdata->delayed_work_noiseon,
+				msecs_to_jiffies(QBT2000_NOISE_RECOVER_WACOM_DELAY));
+		drvdata->delayed_work_on_flag = true;
+		while(retry--) {
+			rc = set_wacom_ble_charge_mode(false);
+			pr_info("%d, retry:%d, rc:%d\n", control, retry, rc);
+			if (rc == 0)
+				break;
+			usleep_range(4950, 5000);
+		}
+	} else {
+		pr_err("invalid value %d,%d\n", control, drvdata->noise_onoff_flag);
+	}
+
+	if (rc < 0) {
+		if (control)
+			drvdata->noise_onoff_flag = QBT2000_NOISE_OFF;
+		else
+			drvdata->noise_onoff_flag = QBT2000_NOISE_ON;
+		drvdata->i2c_error_set++;
+	}
+
 	return rc;
 }
 #endif
@@ -564,6 +609,66 @@ static long fps_qbt2000_ioctl(
 		drvdata->reset_count++;
 		pr_err("SENSOR_RESET\n");
 		break;
+	case QBT2000_SENSOR_TEST:
+		if (copy_from_user(&data, (void *)arg, sizeof(int)) != 0) {
+			pr_err("Failed to copy BGECAL from user to kernel\n");
+			rc = -EFAULT;
+			goto end;
+		}
+#ifndef ENABLE_SENSORS_FPRINT_SECURE  //only for factory
+#ifdef QBT2000_AVOID_NOISE
+		if (data == QBT2000_SENSORTEST_DONE) {
+			pr_info("SENSORTEST Finished\n");
+			fps_qbt2000_noise_control(drvdata, QBT2000_NOISE_ON);
+		} else {
+			pr_info("SENSORTEST Start : 0x%x\n", data);
+			fps_qbt2000_noise_control(drvdata, QBT2000_NOISE_OFF);
+		}
+#endif
+#endif
+		break;
+	case QBT2000_NOISE_REQUEST_STOP: // force CBGE
+#ifdef QBT2000_AVOID_NOISE
+		pr_info("QBT2000_NOISE_REQUEST_STOP. entry\n");
+		drvdata->noise_i2c_result = 1;
+		schedule_work(&drvdata->work_noise_control);
+#endif
+		break;
+	case QBT2000_NOISE_I2C_RESULT_GET: // force CBGE I2C
+#ifdef QBT2000_AVOID_NOISE
+		pr_info("QBT2000_NOISE_I2C_RESULT_GET : %d\n", drvdata->noise_i2c_result);
+		if (copy_to_user((void __user *)priv_arg, &drvdata->noise_i2c_result, sizeof(drvdata->noise_status)) != 0) {
+			pr_err("Failed to copy I2C_RESULT to user\n");
+			rc = -EFAULT;
+			goto end;
+		}
+#endif
+		break;
+	case QBT2000_NOISE_STATUS_GET:
+#ifdef QBT2000_AVOID_NOISE
+		pr_info("QBT2000_NOISE_STATUS_GET. entry\n");
+		drvdata->noise_status = get_wacom_scan_info(false);
+		if (drvdata->noise_status == QBT2000_NOISE_MODE_CHANGED) {
+			drvdata->ignored_cbge_count++;
+		} else if (drvdata->noise_status == QBT2000_NOISE_CHARGING) {
+			drvdata->i2c_charging++;
+		} else if (drvdata->noise_status < 0) {
+			drvdata->i2c_error_get++;
+		}
+		pr_info("QBT2000_NOISE_STATUS_GET : %d\n", drvdata->noise_status);
+		if (copy_to_user((void __user *)priv_arg, &drvdata->noise_status, sizeof(drvdata->noise_status)) != 0) {
+			pr_err("Failed to copy NOISE_STATUS to user\n");
+			rc = -EFAULT;
+			goto end;
+		}
+#endif
+		break;
+	case QBT2000_NOISE_REQUEST_START:
+#ifdef QBT2000_AVOID_NOISE
+		pr_info("QBT2000_NOISE_REQUEST_START\n");
+		fps_qbt2000_noise_control(drvdata, QBT2000_NOISE_ON);
+#endif
+		break;
 	default:
 		pr_err("invalid cmd %d\n", cmd);
 		rc = -ENOIOCTLCMD;
@@ -652,9 +757,20 @@ static ssize_t fps_qbt2000_read(struct file *filp, char __user *ubuf,
 		pr_err("Failed to copy_to_user:%d - event:%d, minor:%d\n",
 			rc, (int)fw_event.ev, minor_no);
 	} else {
-		pr_info("Firmware event %d at minor no %d read at time %lu uS\n",
+		if (minor_no == MINOR_NUM_FD) {
+#ifdef QBT2000_AVOID_NOISE
+#ifdef ENABLE_SENSORS_FPRINT_SECURE
+			mutex_unlock(&drvdata->fod_event_mutex);
+#endif
+#endif
+			pr_info("Firmware event %d at minor no %d read at time %lu uS, mutex_unlock\n",
 				(int)fw_event.ev, minor_no,
 				(unsigned long)ktime_to_us(ktime_get()));
+		} else {
+			pr_info("Firmware event %d at minor no %d read at time %lu uS\n",
+				(int)fw_event.ev, minor_no,
+				(unsigned long)ktime_to_us(ktime_get()));
+		}
 	}
 	return rc;
 }
@@ -807,15 +923,26 @@ static void fps_qbt2000_gpio_report_event(struct qbt2000_drvdata *drvdata)
 
 	if (!drvdata->is_wuhb_connected) {
 		pr_debug("Skipping as WUHB_INT is disconnected\n");
+#ifdef QBT2000_AVOID_NOISE
+#ifdef ENABLE_SENSORS_FPRINT_SECURE
+		mutex_unlock(&drvdata->fod_event_mutex);
+#endif
+#endif
 		return;
 	}
 
 	state = (__gpio_get_value(drvdata->fd_gpio.gpio) ? FINGER_DOWN_GPIO_STATE : FINGER_LEAVE_GPIO_STATE)
 		^ drvdata->fd_gpio.active_low;
 
-	if (drvdata->fd_gpio.event_reported
-			&& state == drvdata->fd_gpio.last_gpio_state)
+	if (drvdata->fd_gpio.event_reported && state == drvdata->fd_gpio.last_gpio_state) {
+#ifdef QBT2000_AVOID_NOISE
+#ifdef ENABLE_SENSORS_FPRINT_SECURE
+		pr_debug("skip the report_event. this event already reported, last_gpio:%d\n", state);
+		mutex_unlock(&drvdata->fod_event_mutex);
+#endif
+#endif
 		return;
+	}
 
 	drvdata->fd_gpio.event_reported = 1;
 	drvdata->fd_gpio.last_gpio_state = state;
@@ -838,11 +965,111 @@ static void fps_qbt2000_wuhb_work_func(struct work_struct *work)
 {
 	struct qbt2000_drvdata *drvdata =
 		container_of(work, struct qbt2000_drvdata, fd_gpio.work);
-
+#ifdef QBT2000_AVOID_NOISE
+#ifdef ENABLE_SENSORS_FPRINT_SECURE
+	mutex_lock(&drvdata->fod_event_mutex);
+	pr_debug("mutex_lock\n");
+#endif
+#endif
 	fps_qbt2000_gpio_report_event(drvdata);
 
 	pm_relax(drvdata->dev);
 }
+
+#ifdef QBT2000_AVOID_NOISE
+static void fps_qbt2000_wuhb_work_noise_down_func(struct work_struct *work)
+{
+	struct qbt2000_drvdata *drvdata =
+		container_of(work, struct qbt2000_drvdata, fd_gpio.work_noise_down);
+	int delay_time = QBT2000_NOISE_OFF_DELAY;
+
+#ifdef ENABLE_SENSORS_FPRINT_SECURE
+	mutex_lock(&drvdata->fod_event_mutex);
+	pr_debug("mutex_lock\n");
+#endif
+
+	schedule_delayed_work(&drvdata->fd_gpio.delayed_noise_down_work, msecs_to_jiffies(delay_time));
+	fps_qbt2000_noise_control(drvdata, QBT2000_NOISE_OFF);
+}
+
+static void fps_qbt2000_ipc_handler_noise_status(struct work_struct *work)
+{
+	struct qbt2000_drvdata *drvdata =
+		container_of(work, struct qbt2000_drvdata, work_ipc_noise_status);
+
+	drvdata->noise_status = get_wacom_scan_info(true);
+	pr_info("entry : %d\n", drvdata->noise_status);
+	if (drvdata->noise_status < 0) {
+		drvdata->i2c_error_get++;
+	} else if (drvdata->noise_status == QBT2000_NOISE_CHARGING) {
+		drvdata->i2c_charging++;
+	}
+
+}
+
+static void fps_qbt2000_work_noise_control(struct work_struct *work)
+{
+	struct qbt2000_drvdata *drvdata =
+		container_of(work, struct qbt2000_drvdata, work_noise_control);
+	int rc = 0;
+
+	pr_info("entry\n");
+	rc = fps_qbt2000_noise_control(drvdata, QBT2000_NOISE_OFF);
+	drvdata->noise_i2c_result = rc;
+	pr_info("done : %d\n", drvdata->noise_i2c_result);
+}
+
+static void fps_qbt2000_gpio_report_event_delayed(struct qbt2000_drvdata *drvdata, int state)
+{
+	struct fw_event_desc fw_event;
+	int rc = 0;
+
+	if (drvdata->fd_gpio.event_reported
+			&& state == drvdata->fd_gpio.last_gpio_state) {
+		rc = fps_qbt2000_noise_control(drvdata, QBT2000_NOISE_ON);
+		pr_info("already done %d %d %d, rc = %d\n", drvdata->fd_gpio.event_reported, state, drvdata->fd_gpio.last_gpio_state, rc);
+#ifdef ENABLE_SENSORS_FPRINT_SECURE
+		mutex_unlock(&drvdata->fod_event_mutex);
+#endif
+		return;
+	}
+	drvdata->fd_gpio.event_reported = 1;
+	drvdata->fd_gpio.last_gpio_state = state;
+
+	fw_event.ev = (state ? FW_EVENT_FINGER_DOWN : FW_EVENT_FINGER_UP);
+
+	mutex_lock(&drvdata->fd_events_mutex);
+
+	kfifo_reset(&drvdata->fd_events);
+
+	if (!kfifo_put(&drvdata->fd_events, fw_event))
+		pr_err("fw events fifo: error adding item\n");
+
+	mutex_unlock(&drvdata->fd_events_mutex);
+	wake_up_interruptible(&drvdata->read_wait_queue_fd);
+	pr_info("state: %s\n", state ? "Finger Down" : "Finger Leave");
+}
+
+static void fps_qbt2000_wuhb_delayed_work_func(struct work_struct *work)
+{
+	struct qbt2000_drvdata *drvdata =
+		container_of(work, struct qbt2000_drvdata, fd_gpio.delayed_noise_down_work.work);
+
+	fps_qbt2000_gpio_report_event_delayed(drvdata, drvdata->now_state);
+
+	pm_relax(drvdata->dev);
+}
+
+static void fps_qbt2000_noiseon_delayed_work_func(struct work_struct *work)
+{
+	struct qbt2000_drvdata *drvdata =
+		container_of(work, struct qbt2000_drvdata, delayed_work_noiseon.work);
+
+	pr_info("entry\n");
+	drvdata->delayed_work_on_flag = false;
+	fps_qbt2000_noise_control(drvdata, QBT2000_NOISE_ON);
+}
+#endif
 
 static irqreturn_t fps_qbt2000_wuhb_irq_handler(int irq, void *dev_id)
 {
@@ -864,7 +1091,21 @@ static irqreturn_t fps_qbt2000_wuhb_irq_handler(int irq, void *dev_id)
 
 	drvdata->wuhb_count++;
 	pm_stay_awake(drvdata->dev);
+#ifndef QBT2000_AVOID_NOISE // not use digitizer
 	schedule_work(&drvdata->fd_gpio.work);
+#else
+#ifndef ENABLE_SENSORS_FPRINT_SECURE // use digitizer but nontz
+	schedule_work(&drvdata->fd_gpio.work);
+#else // use digitizer and tz
+	drvdata->now_state = (__gpio_get_value(drvdata->fd_gpio.gpio) ? FINGER_DOWN_GPIO_STATE : FINGER_LEAVE_GPIO_STATE) ^ drvdata->fd_gpio.active_low;
+	pr_info("gpio state : %d\n", drvdata->now_state);
+	if (drvdata->now_state == FINGER_DOWN_GPIO_STATE) {  // in case of finger down
+		schedule_work(&drvdata->fd_gpio.work_noise_down);
+	} else {
+		schedule_work(&drvdata->fd_gpio.work);
+	}
+#endif //ENABLE_SENSORS_FPRINT_SECURE
+#endif //QBT2000_AVOID_NOISE
 
 	return IRQ_HANDLED;
 }
@@ -890,6 +1131,11 @@ static irqreturn_t fps_qbt2000_ipc_irq_handler(int irq, void *dev_id)
 		pr_warn("invalid irq %d (expected %d)\n", irq, drvdata->fw_ipc.irq);
 		goto end;
 	}
+#ifdef ENABLE_SENSORS_FPRINT_SECURE
+#ifdef QBT2000_AVOID_NOISE
+	schedule_work(&drvdata->work_ipc_noise_status);
+#endif
+#endif
 
 	mutex_lock(&drvdata->ipc_events_mutex);
 	fw_ev_des.ev = ev;
@@ -937,7 +1183,13 @@ static int fps_qbt2000_setup_fd_gpio_irq(struct platform_device *pdev,
 
 	drvdata->fd_gpio.irq = irq;
 	INIT_WORK(&drvdata->fd_gpio.work, fps_qbt2000_wuhb_work_func);
-
+#ifdef QBT2000_AVOID_NOISE
+	INIT_WORK(&drvdata->fd_gpio.work_noise_down, fps_qbt2000_wuhb_work_noise_down_func);
+	INIT_DELAYED_WORK(&drvdata->fd_gpio.delayed_noise_down_work, fps_qbt2000_wuhb_delayed_work_func);
+	INIT_WORK(&drvdata->work_ipc_noise_status, fps_qbt2000_ipc_handler_noise_status);
+	INIT_WORK(&drvdata->work_noise_control, fps_qbt2000_work_noise_control);
+	INIT_DELAYED_WORK(&drvdata->delayed_work_noiseon, fps_qbt2000_noiseon_delayed_work_func);
+#endif
 	rc = devm_request_any_context_irq(&pdev->dev, drvdata->fd_gpio.irq,
 		fps_qbt2000_wuhb_irq_handler, IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING,
 		desc, drvdata);
@@ -1082,11 +1334,22 @@ dt_failed:
 
 static void fps_qbt2000_work_func_debug(struct work_struct *work)
 {
+#ifndef QBT2000_AVOID_NOISE
 	pr_info("ldo:%d,ipc:%d,wuhb:%d,tz:%d,type:%s,int:%d,%d\n",
 		g_data->enabled_ldo, g_data->enabled_ipc,
 		g_data->enabled_wuhb, g_data->tz_mode,
 		sensor_status[g_data->sensortype + 2],
 		g_data->cbge_count, g_data->wuhb_count);
+#else
+	pr_info("ldo:%d,ipc:%d,wuhb:%d,tz:%d,type:%s,int:%d,%d,%d,%d,%d,%d,%d\n",
+		g_data->enabled_ldo, g_data->enabled_ipc,
+		g_data->enabled_wuhb, g_data->tz_mode,
+		sensor_status[g_data->sensortype + 2],
+		g_data->cbge_count, g_data->ignored_cbge_count,
+		g_data->wuhb_count, g_data->i2c_error_set,
+		g_data->i2c_error_get, g_data->i2c_charging,
+		g_data->noise_onoff_flag);
+#endif
 }
 
 static void fps_qbt2000_enable_debug_timer(void)
@@ -1137,6 +1400,12 @@ static int fps_qbt2000_probe(struct platform_device *pdev)
 	int rc = 0;
 
 	pr_info("Start\n");
+#ifdef CONFIG_BATTERY_SAMSUNG
+	if (lpcharge) {
+		pr_info("Do not load driver due to : lpm %d\n", lpcharge);
+		return rc;
+	}
+#endif
 	drvdata = devm_kzalloc(dev, sizeof(*drvdata), GFP_KERNEL);
 	if (!drvdata)
 		return -ENOMEM;
@@ -1155,6 +1424,9 @@ static int fps_qbt2000_probe(struct platform_device *pdev)
 	mutex_init(&drvdata->ioctl_mutex);
 	mutex_init(&drvdata->fd_events_mutex);
 	mutex_init(&drvdata->ipc_events_mutex);
+#ifdef QBT2000_AVOID_NOISE
+	mutex_init(&drvdata->fod_event_mutex);
+#endif
 
 	rc = fps_qbt2000_dev_register(drvdata);
 	if (rc < 0)
@@ -1212,10 +1484,20 @@ static int fps_qbt2000_probe(struct platform_device *pdev)
 #endif
 	drvdata->sensortype = SENSOR_QBT2000;
 	drvdata->cbge_count = 0;
+#ifdef QBT2000_AVOID_NOISE
+	drvdata->ignored_cbge_count = 0;
+	drvdata->i2c_error_set = 0;
+	drvdata->i2c_error_get = 0;
+	drvdata->i2c_charging = 0;
+	drvdata->noise_status = QBT2000_NOISE_NO_CHARGING;
+	drvdata->noise_onoff_flag = QBT2000_NOISE_ON;
+	drvdata->delayed_work_on_flag = false;
+#endif
 	drvdata->wuhb_count = 0;
 	drvdata->reset_count = 0;
 	drvdata->wuhb_test_flag = 0;
 	drvdata->wuhb_test_result = 0;
+
 	fps_qbt2000_set_timer(drvdata);
 	fps_qbt2000_enable_debug_timer();
 
@@ -1257,6 +1539,9 @@ static int fps_qbt2000_remove(struct platform_device *pdev)
 	mutex_destroy(&drvdata->ioctl_mutex);
 	mutex_destroy(&drvdata->fd_events_mutex);
 	mutex_destroy(&drvdata->ipc_events_mutex);
+#ifdef QBT2000_AVOID_NOISE
+	mutex_destroy(&drvdata->fod_event_mutex);
+#endif
 
 	device_destroy(drvdata->qbt2000_class, drvdata->qbt2000_fd_cdev.dev);
 	device_destroy(drvdata->qbt2000_class, drvdata->qbt2000_ipc_cdev.dev);
@@ -1285,6 +1570,11 @@ static int fps_qbt2000_suspend(struct platform_device *pdev, pm_message_t state)
 	int rc = 0;
 	struct qbt2000_drvdata *drvdata = platform_get_drvdata(pdev);
 
+#ifdef CONFIG_BATTERY_SAMSUNG
+	if (lpcharge)
+		return rc;
+#endif
+
 #if defined(ENABLE_SENSORS_FPRINT_SECURE)
 	fpsensor_goto_suspend = 1;
 #endif
@@ -1312,6 +1602,11 @@ static int fps_qbt2000_suspend(struct platform_device *pdev, pm_message_t state)
 static int fps_qbt2000_resume(struct platform_device *pdev)
 {
 	int rc = 0;
+
+#ifdef CONFIG_BATTERY_SAMSUNG
+	if (lpcharge)
+		return rc;
+#endif
 
 #if defined(ENABLE_SENSORS_FPRINT_SECURE)
 	if (fpsensor_goto_suspend) {

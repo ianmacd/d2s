@@ -314,6 +314,9 @@ static int search_roland_implicit_fb(struct usb_device *dev, int ifnum,
 	return 0;
 }
 
+/* Setup an implicit feedback endpoint from a quirk. Returns 0 if no quirk
+ * applies. Returns 1 if a quirk was found.
+ */
 static int set_sync_ep_implicit_fb_quirk(struct snd_usb_substream *subs,
 					 struct usb_device *dev,
 					 struct usb_interface_descriptor *altsd,
@@ -392,7 +395,7 @@ add_sync_ep:
 
 	subs->data_endpoint->sync_master = subs->sync_endpoint;
 
-	return 0;
+	return 1;
 }
 
 static int set_sync_endpoint(struct snd_usb_substream *subs,
@@ -430,6 +433,10 @@ static int set_sync_endpoint(struct snd_usb_substream *subs,
 	err = set_sync_ep_implicit_fb_quirk(subs, dev, altsd, attr);
 	if (err < 0)
 		return err;
+
+	/* endpoint set by quirk */
+	if (err > 0)
+		return 0;
 
 	if (altsd->bNumEndpoints < 2)
 		return 0;
@@ -750,8 +757,10 @@ static int snd_usb_hw_params(struct snd_pcm_substream *substream,
 
 	ret = snd_pcm_lib_alloc_vmalloc_buffer(substream,
 					       params_buffer_bytes(hw_params));
-	if (ret < 0)
+	if (ret < 0) {
+		dev_err(&subs->dev->dev,"cannot pcm lib alloc, ret %d\n", ret);
 		return ret;
+	}
 
 	subs->pcm_format = params_format(hw_params);
 	subs->period_bytes = params_period_bytes(hw_params);
@@ -762,7 +771,7 @@ static int snd_usb_hw_params(struct snd_pcm_substream *substream,
 
 	fmt = find_format(subs);
 	if (!fmt) {
-		dev_dbg(&subs->dev->dev,
+		dev_err(&subs->dev->dev,
 			"cannot set format: format = %#x, rate = %d, channels = %d\n",
 			   subs->pcm_format, subs->cur_rate, subs->channels);
 		return -EINVAL;
@@ -780,6 +789,10 @@ static int snd_usb_hw_params(struct snd_pcm_substream *substream,
 	subs->altset_idx = fmt->altset_idx;
 	subs->need_setup_ep = true;
 
+	dev_info(&subs->dev->dev,"Dir:%s, intf:%d, alt_id:%d, format:%#x, sample_rate:%d, ch:%d\n",
+			subs->direction? "IN":"OUT", subs->interface,
+			subs->altset_idx, subs->pcm_format, subs->cur_rate,
+			subs->channels);
 	return 0;
 }
 
@@ -950,7 +963,7 @@ static int hw_check_valid_format(struct snd_usb_substream *subs,
 	check_fmts.bits[1] = (u32)(fp->formats >> 32);
 	snd_mask_intersect(&check_fmts, fmts);
 	if (snd_mask_empty(&check_fmts)) {
-		hwc_debug("   > check: no supported format %d\n", fp->format);
+		hwc_debug("   > check: no supported format %d\n", fp->formats);
 		return 0;
 	}
 	/* check the channels */

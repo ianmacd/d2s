@@ -459,14 +459,6 @@ typedef enum {
 #define SEC_TS_MODE_SPONGE_PRESS		(1 << 4)
 #define SEC_TS_MODE_SPONGE_DOUBLETAP_TO_WAKEUP	(1 << 5)
 
-/*
- * support_feature
- * bit value should be made a promise with InputFramework.
- */
-#define INPUT_FEATURE_ENABLE_SETTINGS_AOT	(1 << 0) /* Double tap wakeup settings */
-#define INPUT_FEATURE_ENABLE_PRESSURE		(1 << 1) /* homekey pressure */
-#define INPUT_FEATURE_ENABLE_SYNC_RR120		(1 << 2) /* sync reportrate 120hz */
-
 enum sec_ts_cover_id {
 	SEC_TS_FLIP_WALLET = 0,
 	SEC_TS_VIEW_COVER,

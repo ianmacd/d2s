@@ -20,6 +20,28 @@ void s6e3fa7_copy_self_mask_ctrl(struct maptbl *tbl, u8 *dst)
 	pr_info("%x %x %x\n", dst[0], dst[1], dst[2]);
 }
 
+int s6e3fa7_init_self_mask_ctrl(struct maptbl *tbl)
+{
+	struct aod_dev_info *aod = tbl->pdata;
+	struct aod_ioctl_props *props = &aod->props;
+	props->self_mask_checksum_len = SELFMASK_CHECKSUM_LEN;
+	props->self_mask_checksum = kmalloc(sizeof(u8) * props->self_mask_checksum_len, GFP_KERNEL);
+	if (!props->self_mask_checksum) {
+		panel_err("PANEL:ERR:%s:failed to mem alloc\n", __func__);
+		return -ENOMEM;
+	}
+	props->self_mask_checksum[0] = SELFMASK_CHECKSUM_VALID1;
+	props->self_mask_checksum[1] = SELFMASK_CHECKSUM_VALID2;
+	props->self_mask_checksum[2] = SELFMASK_CHECKSUM_VALID3;
+	props->self_mask_checksum[3] = SELFMASK_CHECKSUM_VALID4;
+	props->self_mask_checksum[4] = SELFMASK_CHECKSUM_VALID5;
+	props->self_mask_checksum[5] = SELFMASK_CHECKSUM_VALID6;
+	props->self_mask_checksum[6] = SELFMASK_CHECKSUM_VALID7;
+	props->self_mask_checksum[7] = SELFMASK_CHECKSUM_VALID8;
+	pr_info("%s was called\n", __func__);
+	return 0;
+}
+
 void s6e3fa7_copy_digital_pos(struct maptbl *tbl, u8 *dst)
 {
 	struct aod_dev_info *aod = tbl->pdata;
@@ -294,9 +316,14 @@ void s6e3fa7_copy_analog_clock_ctrl(struct maptbl *tbl, u8 *dst)
 
 	en_reg |= (SC_TIME_EN | SC_A_CLK_EN);
 
-	if (props->analog.en)
+	if (props->analog.en) {
+		if (props->prev_rotate != props->analog.rotate) {
+			panel_info("AOD:INFO:%s:analog rotate mismatch: %d->%d\n",
+				__func__,props->prev_rotate, props->analog.rotate);
+			msleep(1000);
+		}
 		en_reg |= SC_DISP_ON;
-
+	}
 	if (props->cur_time.disp_24h)
 		en_reg |= SC_24H_EN;
 
@@ -392,7 +419,7 @@ void s6e3fa7_copy_self_move_reset(struct maptbl *tbl, u8 *dst)
 }
 
 #ifdef SUPPORT_NORMAL_SELF_MOVE
-int getidx_self_pattern(struct maptbl *tbl)
+int s6e3fa7_getidx_self_pattern(struct maptbl *tbl)
 {
 	int row = 0;
 	struct aod_dev_info *aod = tbl->pdata;
@@ -422,7 +449,7 @@ int getidx_self_pattern(struct maptbl *tbl)
 }
 
 #if 0
-void copy_self_move_enable(struct maptbl *tbl, u8 *dst)
+void s6e3fa7_copy_self_move_enable(struct maptbl *tbl, u8 *dst)
 {
 	struct aod_dev_info *aod = tbl->pdata;
 	struct aod_ioctl_props *props = &aod->props;
@@ -435,7 +462,7 @@ void copy_self_move_enable(struct maptbl *tbl, u8 *dst)
 }
 #endif
 
-void copy_self_move_pattern(struct maptbl *tbl, u8 *dst)
+void s6e3fa7_copy_self_move_pattern(struct maptbl *tbl, u8 *dst)
 {
 	int idx;
 

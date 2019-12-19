@@ -321,8 +321,10 @@ int fimc_is_hw_camif_cfg(void *sensor_data);
 int fimc_is_hw_camif_open(void *sensor_data);
 #ifdef USE_CAMIF_FIX_UP
 int fimc_is_hw_camif_fix_up(struct fimc_is_device_sensor *sensor);
+int fimc_is_hw_camif_pdp_in_enable(struct fimc_is_device_sensor *sensor, bool enable);
 #else
-#define fimc_is_hw_camif_fix_up(a) ({ int __retval = 0; do {} while(0); __retval; })
+#define fimc_is_hw_camif_fix_up(a) ({ int __retval = 0; do {} while (0); __retval; })
+#define fimc_is_hw_camif_pdp_in_enable(a, b) ({ int __retval = 0; do {} while (0); __retval; })
 #endif
 void fimc_is_hw_ischain_qe_cfg(void);
 int fimc_is_hw_ischain_cfg(void *ischain_data);

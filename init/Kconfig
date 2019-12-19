@@ -439,7 +439,7 @@ config TASKSTATS
 	bool "Export task/process statistics through netlink"
 	depends on NET
 	depends on MULTIUSER
-	default n
+	default y
 	help
 	  Export selected statistics for tasks/processes through the
 	  generic netlink interface. Unlike BSD process accounting, the
@@ -464,6 +464,7 @@ config TASK_DELAY_ACCT
 config TASK_XACCT
 	bool "Enable extended accounting over taskstats"
 	depends on TASKSTATS
+	default y
 	help
 	  Collect extended task accounting data and send the data
 	  to userland for processing over the taskstats interface.
@@ -473,6 +474,7 @@ config TASK_XACCT
 config TASK_IO_ACCOUNTING
 	bool "Enable per-task storage I/O accounting"
 	depends on TASK_XACCT
+	default y
 	help
 	  Collect information on the number of bytes of storage I/O which this
 	  task has caused.
@@ -2040,3 +2042,5 @@ config ASN1
 	  functions to call on what tags.
 
 source "kernel/Kconfig.locks"
+
+

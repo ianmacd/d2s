@@ -51,6 +51,8 @@ struct arps_meta __rcu *newflow_arps;
 cpumask_var_t cpu_big_mask;
 cpumask_var_t cpu_little_mask;
 
+cpumask_var_t mcps_cpu_online_mask;
+
 struct arps_meta* get_arps_rcu(void)
 {
     struct arps_meta* arps = rcu_dereference(dynamic_arps);
@@ -110,6 +112,8 @@ static struct rps_map* create_arps_map_and(cpumask_var_t mask , const cpumask_va
 
     i = 0;
     for_each_cpu_and(cpu, mask, ref) {
+        if(cpu < 0)
+            continue;
         map->cpus[i++] = cpu;
     }
     map->len = i;
@@ -267,6 +271,13 @@ void init_mcps_arps_meta (void)
     struct arps_meta *old;
 
     lock_arps_meta = __SPIN_LOCK_UNLOCKED(lock_arps_meta);
+
+    //online mask
+    if(!zalloc_cpumask_var(&mcps_cpu_online_mask, GFP_KERNEL)) {
+        MCPS_INFO("Fail to zalloc mcps_cpu_online_mask\n");
+        return;
+    }
+    cpumask_copy(mcps_cpu_online_mask, cpu_online_mask);
 
     //big/lit mask
     create_arps_mask("f0", &cpu_big_mask);
@@ -521,6 +532,10 @@ int set_mcps_move (const char * val , const struct kernel_param *kp)
 
     i = 0;
     copy = (char*)kzalloc(sizeof(char) * len, GFP_KERNEL);
+    if(!copy) {
+        MCPS_DEBUG("set_mcps_move : fail to kzalloc\n");
+        goto end;
+    }
     memcpy(copy, val , sizeof(char) * len);
 
     tmp = copy;
@@ -593,6 +608,8 @@ static int mcps_store_rps_map(struct netdev_rx_queue *queue, const char *buf, si
 
     i = 0;
     for_each_cpu_and(cpu, mask, cpu_online_mask) {
+        if(cpu < 0)
+            continue;
         map->cpus[i++] = cpu;
     }
 

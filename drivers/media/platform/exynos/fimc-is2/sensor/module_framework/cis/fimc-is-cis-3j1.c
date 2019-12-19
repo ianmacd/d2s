@@ -225,10 +225,6 @@ int sensor_3j1_cis_init(struct v4l2_subdev *subdev)
 	struct fimc_is_cis *cis;
 	u32 setfile_index = 0;
 	cis_setting_info setinfo;
-#ifdef USE_CAMERA_HW_BIG_DATA
-	struct cam_hw_param *hw_param = NULL;
-	struct fimc_is_device_sensor_peri *sensor_peri = NULL;
-#endif
 	setinfo.param = NULL;
 	setinfo.return_value = 0;
 
@@ -242,22 +238,16 @@ int sensor_3j1_cis_init(struct v4l2_subdev *subdev)
 	}
 
 	FIMC_BUG(!cis->cis_data);
+#if !defined(CONFIG_VENDER_MCD)
 	memset(cis->cis_data, 0, sizeof(cis_shared_data));
-	cis->rev_flag = false;
 
 	ret = sensor_cis_check_rev(cis);
 	if (ret < 0) {
-#ifdef USE_CAMERA_HW_BIG_DATA
-		sensor_peri = container_of(cis, struct fimc_is_device_sensor_peri, cis);
-		if (sensor_peri)
-			fimc_is_sec_get_hw_param(&hw_param, sensor_peri->module->position);
-		if (hw_param)
-			hw_param->i2c_sensor_err_cnt++;
-#endif
 		warn("sensor_3j1_check_rev is fail when cis init, ret(%d)", ret);
-		cis->rev_flag = true;
+		ret = -EINVAL;
 		goto p_err;
 	}
+#endif
 
 	cis->cis_data->product_name = cis->id;
 	cis->cis_data->cur_width = SENSOR_3J1_MAX_WIDTH;
@@ -533,16 +523,6 @@ int sensor_3j1_cis_mode_change(struct v4l2_subdev *subdev, u32 mode)
 		err("invalid mode(%d)!!", mode);
 		ret = -EINVAL;
 		goto p_err;
-	}
-
-	/* If check_rev fail when cis_init, one more check_rev in mode_change */
-	if (cis->rev_flag == true) {
-		cis->rev_flag = false;
-		ret = sensor_cis_check_rev(cis);
-		if (ret < 0) {
-			err("sensor_3j1_check_rev is fail");
-			goto p_err;
-		}
 	}
 
 	sensor_3j1_cis_data_calculation(sensor_3j1_pllinfos[mode], cis->cis_data);
@@ -1131,6 +1111,10 @@ int sensor_3j1_cis_adjust_frame_duration(struct v4l2_subdev *subdev,
 
 	vt_pic_clk_freq_mhz = cis_data->pclk / (1000 * 1000);
 	line_length_pck = cis_data->line_length_pck;
+	if ((cis_data->stream_on == false) && (input_exposure_time > SENSOR_3J1_EXPOSURE_TIME_MAX)) {
+		err("input_exposure_time is out of bound (%d -> %d)", input_exposure_time, SENSOR_3J1_EXPOSURE_TIME_MAX);
+		input_exposure_time = SENSOR_3J1_EXPOSURE_TIME_MAX;
+	}
 	frame_length_lines = ((vt_pic_clk_freq_mhz * input_exposure_time) / line_length_pck);
 	frame_length_lines += cis_data->max_margin_coarse_integration_time;
 
@@ -1999,6 +1983,7 @@ static struct fimc_is_cis_ops cis_ops = {
 	.cis_update_mipi_info = sensor_3j1_cis_update_mipi_info,
 	.cis_get_mipi_clock_string = sensor_3j1_cis_get_mipi_clock_string,
 #endif
+	.cis_check_rev_on_init = sensor_cis_check_rev_on_init,
 	.cis_set_initial_exposure = sensor_cis_set_initial_exposure,
 };
 
@@ -2114,8 +2099,9 @@ static int cis_3j1_probe(struct i2c_client *client,
 		v4l2_set_subdevdata(subdev_cis, cis);
 		v4l2_set_subdev_hostdata(subdev_cis, device);
 		snprintf(subdev_cis->name, V4L2_SUBDEV_NAME_SIZE, "cis-subdev.%d", cis->id);
-	}
 
+		sensor_cis_parse_dt(dev, cis->subdev);
+	}
 	cis->use_initial_ae = of_property_read_bool(dnode, "use_initial_ae");
 	probe_info("%s use initial_ae(%d)\n", __func__, cis->use_initial_ae);
 

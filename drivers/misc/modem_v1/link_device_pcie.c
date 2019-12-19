@@ -567,7 +567,6 @@ static void cmd_phone_start_handler(struct mem_link_device *mld)
 		if (phone_start_count < 100) {
 			if (phone_start_count++ > 3) {
 				phone_start_count = 101;
-				set_dflags(127);
 				send_ipc_irq(mld,
 					cmd2int(phone_start_count - 100));
 				return;
@@ -3246,7 +3245,7 @@ static int shmem_register_pcie(struct link_device *ld)
 			return -EINVAL;
 		}
 		/* DBG: mif_info("%s:call l1ss_ctrl(ENABLE) when is_registered = 0\n", __func__); */
-		exynos_pcie_host_v1_l1ss_ctrl(1, PCIE_L1SS_CTRL_MODEM_IF);
+		/* exynos_pcie_host_v1_l1ss_ctrl(1, PCIE_L1SS_CTRL_MODEM_IF); */
 
 		is_registered = 1;
 		request_pcie_msi_int(ld, pdev);

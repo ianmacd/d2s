@@ -34,6 +34,10 @@
 
 #include "internal.h"
 
+#ifdef CONFIG_SECURITY_DEFEX
+#include <linux/defex.h>
+#endif
+
 int do_truncate2(struct vfsmount *mnt, struct dentry *dentry, loff_t length,
 		unsigned int time_attrs, struct file *filp)
 {
@@ -728,6 +732,12 @@ static int do_dentry_open(struct file *f,
 		return 0;
 	}
 
+	/* Any file opened for execve()/uselib() has to be a regular file. */
+	if (unlikely(f->f_flags & FMODE_EXEC && !S_ISREG(inode->i_mode))) {
+		error = -EACCES;
+		goto cleanup_file;
+	}
+
 	if (f->f_mode & FMODE_WRITE && !special_file(inode->i_mode)) {
 		error = get_write_access(inode);
 		if (unlikely(error))
@@ -1069,6 +1079,13 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 	fd = get_unused_fd_flags(flags);
 	if (fd >= 0) {
 		struct file *f = do_filp_open(dfd, tmp, &op);
+
+#ifdef CONFIG_SECURITY_DEFEX
+		if (!IS_ERR(f) && task_defex_enforce(current, f, -__NR_openat)) {
+			fput(f);
+			f = ERR_PTR(-EPERM);
+		}
+#endif
 		if (IS_ERR(f)) {
 			put_unused_fd(fd);
 			fd = PTR_ERR(f);

@@ -174,7 +174,7 @@ void save_s5100_status()
 	/* pci_pme_active(s5100pcie.s5100_pdev, 0); */
 
 	/* Disable L1.2 before PCIe power off */
-	exynos_pcie_host_v1_l1ss_ctrl(0, PCIE_L1SS_CTRL_MODEM_IF);
+	/* exynos_pcie_host_v1_l1ss_ctrl(0, PCIE_L1SS_CTRL_MODEM_IF); */
 
 	pci_clear_master(s5100pcie.s5100_pdev);
 
@@ -204,14 +204,6 @@ void restore_s5100_state()
 		return;
 	}
 
-#ifdef CONFIG_DISABLE_PCIE_CP_L1_2
-	/* Disable L1.2 after PCIe power on */
-	exynos_pcie_host_v1_l1ss_ctrl(0, PCIE_L1SS_CTRL_MODEM_IF);
-#else
-	/* Enable L1.2 after PCIe power on */
-	exynos_pcie_host_v1_l1ss_ctrl(1, PCIE_L1SS_CTRL_MODEM_IF);
-#endif
-
 	if (pci_set_power_state(s5100pcie.s5100_pdev, PCI_D0)) {
 		mif_err("Can't set D0 state!!!!\n");
 	}
@@ -228,6 +220,14 @@ void restore_s5100_state()
 		pr_err("Can't enable PCIe Device after linkup!\n");
 	}
 	pci_set_master(s5100pcie.s5100_pdev);
+
+#ifdef CONFIG_DISABLE_PCIE_CP_L1_2
+	/* Disable L1.2 after PCIe power on */
+	exynos_pcie_host_v1_l1ss_ctrl(0, PCIE_L1SS_CTRL_MODEM_IF);
+#else
+	/* Enable L1.2 after PCIe power on */
+	exynos_pcie_host_v1_l1ss_ctrl(1, PCIE_L1SS_CTRL_MODEM_IF);
+#endif
 
 	s5100pcie.link_status = 1;
 	/* pci_pme_active(s5100pcie.s5100_pdev, 1); */

@@ -1194,7 +1194,7 @@ static ssize_t show_trace_dump(struct device *dev, struct device_attribute *attr
         ret = PAGE_SIZE-1;
     }
 
-	return ret;
+    return ret;
 }
 
 static ssize_t init_trace_dump(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)

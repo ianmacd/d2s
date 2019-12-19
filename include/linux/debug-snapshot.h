@@ -41,9 +41,7 @@ extern int dbg_snapshot_set_hardlockup(int);
 extern int dbg_snapshot_get_hardlockup(void);
 extern void dbg_snapshot_set_sjtag_status(void);
 extern int dbg_snapshot_get_sjtag_status(void);
-extern int dbg_snapshot_set_debug_level(int);
 extern int dbg_snapshot_get_debug_level(void);
-extern void dbg_snapshot_set_debug_level_reg(void);
 extern int dbg_snapshot_get_debug_level_reg(void);
 extern unsigned int dbg_snapshot_get_item_size(char *);
 extern unsigned int dbg_snapshot_get_item_paddr(char *);
@@ -149,8 +147,10 @@ extern void dbg_snapshot_pmu(int id, const char *func_name, int mode);
 
 #ifdef CONFIG_DEBUG_SNAPSHOT_FREQ
 void dbg_snapshot_freq(int type, unsigned long old_freq, unsigned long target_freq, int en);
+void dbg_snapshot_freq_misc(int type, unsigned long old_freq, unsigned long target_freq, int en);
 #else
 #define dbg_snapshot_freq(a,b,c,d)		do { } while(0)
+#define dbg_snapshot_freq_misc(a,b,c,d)		do { } while(0)
 #endif
 
 #ifdef CONFIG_DEBUG_SNAPSHOT_DM
@@ -196,6 +196,7 @@ extern void dbg_snapshot_get_softlockup_info(unsigned int cpu, void *info);
 #define dbg_snapshot_clk(a,b,c,d)		do { } while(0)
 #define dbg_snapshot_pmu(a,b,c)		do { } while(0)
 #define dbg_snapshot_freq(a,b,c,d)		do { } while(0)
+#define dbg_snapshot_freq_misc(a,b,c,d)		do { } while(0)
 #define dbg_snapshot_irq_var(v)		do { v = 0; } while(0)
 #define dbg_snapshot_reg(a,b,c,d)		do { } while(0)
 #define dbg_snapshot_hrtimer(a,b,c,d)	do { } while(0)
@@ -220,8 +221,8 @@ extern void dbg_snapshot_get_softlockup_info(unsigned int cpu, void *info);
 #define dbg_snapshot_get_hardlockup()	do { } while(0)
 #define dbg_snapshot_set_sjtag_status() do { } while (0)
 #define dbg_snasshot_get_sjtag_status() do { } while (0)
-#define dbg_snapshot_set_debug_level(a) do { } while(0)
 #define dbg_snapshot_get_debug_level()	do { } while(0)
+#define dbg_snapshot_get_debug_level_reg()     do { } while (0)
 #define dbg_snapshot_check_crash_key(a,b)	do { } while(0)
 #define dbg_snapshot_dm(a,b,c,d,e)		do { } while(0)
 #define dbg_snapshot_panic_handler_safe()	do { } while(0)
@@ -311,10 +312,10 @@ enum dsslog_freq_flag {
 	DSS_FLAG_FSYS0,
 	DSS_FLAG_MFC,
 	DSS_FLAG_NPU,
+	DSS_FLAG_G3D,
 	DSS_FLAG_END
 };
 
-#define DSS_DEBUG_LEVEL_NONE	(-1)
 #define DSS_DEBUG_LEVEL_PREFIX	(0xDB9 << 16)
 #define DSS_DEBUG_LEVEL_LOW	(0)
 #define DSS_DEBUG_LEVEL_MID	(1)

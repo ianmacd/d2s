@@ -26,9 +26,9 @@
 DEFINE_PER_CPU(struct sauron_statistics , sauron_stats);
 
 unsigned int mcps_set_cluster_for_newflow __read_mostly = NR_CLUSTER;
-module_param(mcps_set_cluster_for_newflow , uint , 0644);
+module_param(mcps_set_cluster_for_newflow , uint , 0640);
 unsigned int mcps_set_cluster_for_hotplug __read_mostly = BIG_CLUSTER;
-module_param(mcps_set_cluster_for_hotplug , uint , 0644);
+module_param(mcps_set_cluster_for_hotplug , uint , 0640);
 
 #ifdef CONFIG_MCTCP_DEBUG_PRINTK
 #define PRINT_FLOW_STAT(S) {   \
@@ -78,13 +78,10 @@ void __add_flow(struct sauron* sauron, struct eye * eye , int cpu , u32 gro)
 struct eye* __search_flow_rcu(struct sauron* sauron, u32 hash)
 {
     unsigned int idx = (unsigned int)(hash % HASH_SIZE(sauron->sauron_eyes));
-    struct eye* eye;
+    struct eye* eye = NULL;
 
     hlist_for_each_entry_rcu(eye , &sauron->sauron_eyes[idx] , eye_hash_node)
     {
-        if(eye == NULL)
-            continue;
-
         if(eye->hash == hash)
             return eye;
     }
@@ -111,14 +108,11 @@ error :
 
 struct eye* search_flow_lock(struct sauron * sauron , u32 hash) {
     unsigned int idx = (unsigned int)(hash % HASH_SIZE(sauron->sauron_eyes));
-    struct eye* eye;
-    struct hlist_node *temp;
+    struct eye* eye = NULL;
+    struct hlist_node *temp = NULL;
 
     hlist_for_each_entry_safe(eye, temp , &sauron->sauron_eyes[idx], eye_hash_node)
     {
-        if(eye == NULL)
-            continue;
-
         if (eye->hash == hash)
             return eye;
     }
@@ -220,7 +214,7 @@ int migrate_flow (unsigned int from, unsigned int to , unsigned int option)
     struct eye * flow = NULL;
     struct sauron * sauron = NULL;
 
-    if(!cpu_online(from) || !cpu_online(to))
+    if(!mcps_cpu_online(from) || !mcps_cpu_online(to))
         return -EINVAL;
 
     rcu_read_lock();
@@ -365,7 +359,7 @@ __get_rand_cpu (struct rps_map *map, u32 hash) {
     int cpu = -1;
 
     cpu = map->cpus[reciprocal_scale(hash, map->len)];
-    if(cpu_online(cpu)) {
+    if(mcps_cpu_online(cpu)) {
         return cpu;
     }
 
@@ -390,7 +384,9 @@ get_rand_cpu (struct arps_meta * arps, u32 hash , unsigned int cluster)
     if(VALID_CPU(cpu))
         return cpu;
 
-    for_each_cpu_and(cpu, arps->mask , cpu_online_mask) {
+    for_each_cpu_and(cpu, arps->mask , mcps_cpu_online_mask) {
+        if(cpu < 0)
+            continue;
         return cpu;
     }
 
@@ -453,13 +449,13 @@ int get_arps_cpu(struct mcps_config * mcps , struct sk_buff *skb , u32 hash , u3
         if(!eye) {
             goto error;
         }
-    }
 
-    arps        = get_arps_rcu();
-    sauron      = rcu_dereference(mcps->sauron_body);
+        arps        = get_arps_rcu();
+        sauron      = rcu_dereference(mcps->sauron_body);
 
-    if(!arps || !sauron) {
-        goto error;
+        if(!arps || !sauron) {
+            goto error;
+        }
     }
 
     mcps_in_packet(eye, skb);
@@ -480,9 +476,9 @@ int get_arps_cpu(struct mcps_config * mcps , struct sk_buff *skb , u32 hash , u3
         goto changed;
     }
 
-    if(!cpu_online(eye->cpu)) {
+    if(!mcps_cpu_online(eye->cpu)) {
         int ret = try_to_hqueue(eye->hash , eye->cpu, skb, gro);
-        if(ret)
+        if(ret < 0)
             return NR_CPUS;
 
         goto changed;

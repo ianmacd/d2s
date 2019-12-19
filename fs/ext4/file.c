@@ -123,7 +123,7 @@ ext4_unaligned_aio(struct inode *inode, struct iov_iter *from, loff_t pos)
 	struct super_block *sb = inode->i_sb;
 	int blockmask = sb->s_blocksize - 1;
 
-	if (pos >= i_size_read(inode))
+	if (pos >= ALIGN(i_size_read(inode), sb->s_blocksize))
 		return 0;
 
 	if ((pos | iov_iter_alignment(from)) & blockmask)
@@ -407,8 +407,10 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
 	}
 	if (ext4_encrypted_inode(inode)) {
 		ret = fscrypt_get_encryption_info(inode);
-		if (ret)
+		if (ret) {
+			printk(KERN_ERR "%s: failed to get encryption info (%d)", __func__, ret);
 			return -EACCES;
+		}
 		if (!fscrypt_has_encryption_key(inode))
 			return -ENOKEY;
 	}

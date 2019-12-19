@@ -238,17 +238,17 @@ void xhci_portsc_power_off(void __iomem *portsc, u32 on, u32 prt)
 
 	if (portsc_control_priority > prt) {
 		spin_unlock(&xhcioff_lock);
-		return;		
+		return;
 	}
 
 	portsc_control_priority = prt;
-	
+
 	if (on && !port_off_done) {
 		pr_info("%s, Do not switch-on port\n", __func__);
 		spin_unlock(&xhcioff_lock);
 		return;
 	}
-	
+
 	reg = readl(portsc);
 
 	if (on)
@@ -276,12 +276,12 @@ void xhci_portsc_power_off(void __iomem *portsc, u32 on, u32 prt)
 		port_off_done = 1;
 
 	pr_info("phycon ess_ctrl = 0x%x\n", readl(phycon_base_addr+0x70));
-	
+
 	spin_unlock(&xhcioff_lock);
 }
 
 int xhci_portsc_set(u32 on)
-{	
+{
 	if (usb3_portsc != NULL && !on) {
 		xhci_portsc_power_off(usb3_portsc, 0, 2);
 		pp_set_delayed = 0;
@@ -290,7 +290,7 @@ int xhci_portsc_set(u32 on)
 
 	if (!on)
 		pp_set_delayed = 1;
-	
+
 	pr_info("%s, usb3_portsc is NULL\n", __func__);
 	return -EIO;
 }
@@ -479,8 +479,8 @@ static int xhci_plat_probe(struct platform_device *pdev)
 	/* Get USB3.0 PHY to tune the PHY */
 	if (parent) {
 		xhci->shared_hcd->phy = devm_phy_get(parent, "usb3-phy");
-		if (IS_ERR_OR_NULL(hcd->phy)) {
-			hcd->phy = NULL;
+		if (IS_ERR_OR_NULL(xhci->shared_hcd->phy)) {
+			xhci->shared_hcd->phy = NULL;
 			dev_err(&pdev->dev,
 				"%s: failed to get phy\n", __func__);
 		}

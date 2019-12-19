@@ -44,6 +44,14 @@ static int try_to_freeze_tasks(bool user_only)
 #ifdef CONFIG_PM_SLEEP
 	char suspend_abort[MAX_SUSPEND_ABORT_LEN];
 #endif
+	char *sys_state[SYSTEM_END] = {
+		"BOOTING",
+		"SCHEDULING",
+		"RUNNING",
+		"HALT",
+		"POWER_OFF",
+		"RESTART",
+	};
 
 	start = ktime_get_boottime();
 
@@ -120,14 +128,16 @@ static int try_to_freeze_tasks(bool user_only)
 		read_lock(&tasklist_lock);
 		for_each_process_thread(g, p) {
 			if (p != current && !freezer_should_skip(p)
-			    && freezing(p) && !frozen(p))
+			    && freezing(p) && !frozen(p)) {
 				sched_show_task(p);
+				sec_debug_set_extra_info_backtrace_task(p);
+				sec_debug_set_extra_info_unfz(p->comm);
+			}
 		}
 		read_unlock(&tasklist_lock);
 
-		if (dbg_snapshot_get_debug_level() != DSS_DEBUG_LEVEL_LOW)
-			panic("fail to freeze tasks");
-		
+		sec_debug_set_extra_info_unfz(sys_state[system_state]);
+		panic("fail to freeze tasks");
 	} else {
 		pr_cont("(elapsed %d.%03d seconds) ", elapsed_msecs / 1000,
 			elapsed_msecs % 1000);
@@ -135,7 +145,7 @@ static int try_to_freeze_tasks(bool user_only)
 
 	sec_debug_set_unfrozen_task((uint64_t)NULL);
 	sec_debug_set_unfrozen_task_count((uint64_t)0);
-	
+
 	return todo ? -EBUSY : 0;
 }
 

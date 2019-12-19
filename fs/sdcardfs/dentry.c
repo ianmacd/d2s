@@ -25,6 +25,7 @@
 extern
 int __fscrypt_sdp_d_delete(const struct dentry *dentry, int dek_is_locked);
 #endif
+
 /*
  * returns: -ERRNO if error (returned to user)
  *          0: tell VFS to invalidate dentry

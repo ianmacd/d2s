@@ -147,7 +147,7 @@ static inline int update_pps(struct sauron* sauron, struct eye* eye, u32 gro)
     if(!time_after(eye->t_stamp, eye->t_capture + 1 * HZ))
         return -EINVAL;
 
-    eye->pps = (eye->value - eye->capture) * HZ / (eye->t_stamp - eye->t_capture);
+    eye->pps = (unsigned int)((eye->value - eye->capture) * HZ / (eye->t_stamp - eye->t_capture));
 
     eye->t_capture  = eye->t_stamp;
     eye->capture    = eye->value;

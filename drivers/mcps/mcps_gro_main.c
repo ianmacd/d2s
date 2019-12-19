@@ -25,7 +25,7 @@ EXPORT_PER_CPU_SYMBOL(mcps_gro_pantries);
 
 int mcps_gro_pantry_max_capability __read_mostly = 30000;
 module_param(mcps_gro_pantry_max_capability , int , 0640);
-int mcps_gro_pantry_quota __read_mostly = 300;
+int mcps_gro_pantry_quota __read_mostly = 128;
 module_param(mcps_gro_pantry_quota , int , 0640);
 
 static long mcps_gro_flush_time = 5000L;
@@ -75,6 +75,7 @@ static int process_gro_pantry(struct napi_struct *napi , int quota)
     struct mcps_pantry *pantry = container_of(napi , struct mcps_pantry , rx_napi_struct);
     int work = 0;
     bool again = true;
+    gro_result_t ret;
 
     tracing_mark_writev('B',1111,"process_gro_pantry", 0);
     if(mcps_on_ipi_waiting(pantry)) {
@@ -92,17 +93,18 @@ static int process_gro_pantry(struct napi_struct *napi , int quota)
 
             if (mcps_check_skb_can_gro(skb)/*&& (flag & FLAG_GRO)*/) {
                 __this_cpu_inc(mcps_gro_pantries.gro_processed);
-                tracing_mark_writev('B',1111,"napi_gro_rx", 0);
-                napi_gro_receive(napi, skb);
-                tracing_mark_writev('E',1111,"napi_gro_rx", 0);
+                ret = napi_gro_receive(napi, skb);
 
-                mcps_gro_flush_timer(pantry);
+                if(ret == GRO_NORMAL) {
+                    getnstimeofday(&pantry->flush_time);
+                }
             } else {
                 __this_cpu_inc(mcps_gro_pantries.processed);
-                tracing_mark_writev('B',1111,"netif_receive_skb", 0);
                 netif_receive_skb(skb); //This function may only be called from softirq context and interrupts should be enabled. Ref.function description
-                tracing_mark_writev('E',1111,"netif_receive_skb", 1);
             }
+
+            mcps_gro_flush_timer(pantry);
+
             if (++work >= quota) {
                 PRINT_GRO_WORKED(pantry->cpu , work , quota);
                 goto end;
@@ -173,6 +175,26 @@ static int enqueue_to_gro_pantry(struct sk_buff *skb, int cpu)
     local_irq_save(flags); //save register information into flags and disable irq (local_irq_disabled)
 
     pantry_lock(pantry);
+
+    // hp off.
+    if(pantry->cpu == NR_CPUS) {
+        int hdr_cpu = 0;
+        pantry_unlock(pantry);
+        local_irq_restore(flags);
+
+        hdr_cpu = try_to_hqueue(skb->hash, cpu, skb, MCPS_GRO_DEVICE);
+        cpu = hdr_cpu;
+        if(hdr_cpu < 0) {
+            tracing_mark_writev('E',1111,"enqueue_to_gro_pantry", 88);
+            return NET_RX_SUCCESS;
+        } else {
+            pantry = &per_cpu(mcps_gro_pantries, hdr_cpu);
+
+            local_irq_save(flags);
+            pantry_lock(pantry);
+        }
+    }
+
     qlen = skb_queue_len(&pantry->input_pkt_queue);
     if (qlen <= mcps_gro_pantry_max_capability) {
         if (qlen) {
@@ -267,10 +289,18 @@ EXPORT_SYMBOL(mcps_try_gro);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0))
 int mcps_gro_cpu_startup_callback(unsigned int ocpu)
 {
-    unsigned int oldcpu = ocpu;
+    struct mcps_pantry *pantry = &per_cpu(mcps_gro_pantries, ocpu);
+    tracing_mark_writev('B',1111,"mcps_gro_online", ocpu);
 
-    hotplug_on(oldcpu, 0 , 0);
+    local_irq_disable();
+    pantry_lock(pantry);
+    pantry->cpu = ocpu;
+    pantry_unlock(pantry);
+    local_irq_enable();
 
+    hotplug_on(ocpu, 0 , MCPS_GRO_DEVICE);
+
+    tracing_mark_writev('E',1111,"mcps_gro_online", ocpu);
     return 0;
 }
 
@@ -284,16 +314,23 @@ int mcps_gro_cpu_teardown_callback(unsigned int ocpu)
     bool needsched = false;
     struct list_head pinfo_queue;
 
+    tracing_mark_writev('B',1111,"mcps_gro_offline", ocpu);
     skb_queue_head_init(&queue);
     INIT_LIST_HEAD(&pinfo_queue);
 
     cpu = light_cpu(1);
-    cpu = cpu < NR_CPUS ? cpu : 0;
+    if(cpu == ocpu) {
+        cpu = 0;
+    }
+
     pantry = &per_cpu(mcps_gro_pantries, cpu);
     oldpantry = &per_cpu(mcps_gro_pantries, oldcpu);
 
     MCPS_DEBUG("[%u] : CPU[%u -> %u] - HOTPLUGGED OUT\n"
             , smp_processor_id_safe(), oldcpu, cpu);
+
+    napi_gro_flush(&oldpantry->rx_napi_struct, false);
+    getnstimeofday(&oldpantry->flush_time);
 
     //detach first.
     local_irq_disable();
@@ -319,9 +356,6 @@ int mcps_gro_cpu_teardown_callback(unsigned int ocpu)
     pantry_unlock(oldpantry);
     local_irq_enable();
 
-    napi_gro_flush(&oldpantry->rx_napi_struct, false);
-    getnstimeofday(&oldpantry->flush_time);
-
     // attach second.
     local_irq_disable();
     pantry_lock(pantry);
@@ -344,18 +378,20 @@ int mcps_gro_cpu_teardown_callback(unsigned int ocpu)
         splice_pending_info_2cpu(&pinfo_queue , cpu , 1);
     }
 
-    if (needsched && !__test_and_set_bit(NAPI_STATE_SCHED, &pantry->rx_napi_struct.state)) {
-        if (!mcps_gro_ipi_queued(pantry)) // changed
-            __napi_schedule_irqoff(&pantry->rx_napi_struct);
-    }
+    needsched = (needsched && !__test_and_set_bit(NAPI_STATE_SCHED, &pantry->rx_napi_struct.state));
 
     pantry_unlock(pantry);
     local_irq_enable();
 
+    if(needsched && mcps_cpu_online(cpu)) {
+        smp_call_function_single_async(pantry->cpu , &pantry->csd);
+    }
+
+    tracing_mark_writev('E',1111,"mcps_gro_offline", cpu);
     return 0;
 }
 #else
-static int mcps_gro_cpu_callback(struct notifier_block *notifier , unsigned long action, void* ocpu)
+int mcps_gro_cpu_callback(struct notifier_block *notifier , unsigned long action, void* ocpu)
 {
     unsigned int cpu, oldcpu = (unsigned long)ocpu;
     struct mcps_pantry *pantry , *oldpantry;
@@ -450,45 +486,6 @@ online:
 }
 #endif
 
-static int init_mcps_gro_notifys(void)
-{
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0))
-    int ret = 0;
-    ret = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN, "net/mcps_gro:online",
-            mcps_gro_cpu_startup_callback , mcps_gro_cpu_teardown_callback);
-    if(ret < 0) { // < 0 return If fail to setup. ref) http://heim.ifi.uio.no/~knuto/kernel/4.14/core-api/cpu_hotplug.html
-        return -ENOMEM;
-    }
-#else
-    struct notifier_block* cpu_notifier = (struct notifier_block*)kzalloc(sizeof(struct notifier_block), GFP_KERNEL);
-    if(!cpu_notifier)
-        return -ENOMEM;
-
-    if(!mcps)
-        return -EINVAL;
-
-    cpu_notifier->notifier_call = mcps_gro_cpu_callback;
-    mcps->mcps_gro_cpu_notifier = cpu_notifier;
-
-    register_cpu_notifier(mcps->mcps_gro_cpu_notifier);
-#endif
-    return 0;
-}
-
-static int release_mcps_gro_notifys(void)
-{
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0))
-    cpuhp_remove_state_nocalls(CPUHP_AP_ONLINE_DYN);
-#else
-    if(!mcps || !mcps->mcps_gro_cpu_notifier)
-        return -EINVAL;
-
-    unregister_cpu_notifier(mcps->mcps_gro_cpu_notifier);
-    kfree(mcps->mcps_gro_cpu_notifier);
-#endif
-    return 0;
-}
-
 void mcps_gro_init(struct net_device * mcps_device)
 {
     int i = 0;
@@ -519,8 +516,6 @@ void mcps_gro_init(struct net_device * mcps_device)
         }
     }
 
-    init_mcps_gro_notifys();
-
     MCPS_DEBUG("COMPLETED \n");
 }
 
@@ -528,7 +523,6 @@ void mcps_gro_exit(void)
 {
     int i = 0;
 
-    release_mcps_gro_notifys();
     for_each_possible_cpu(i) {
         if(VALID_CPU(i)) {
             struct mcps_pantry *pantry = &per_cpu(mcps_gro_pantries, i);

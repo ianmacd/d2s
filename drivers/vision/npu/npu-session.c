@@ -13,6 +13,7 @@
 #include <linux/delay.h>
 #include <linux/slab.h>
 #include <linux/wait.h>
+#include <linux/sched.h>
 //#include "lib/vpul-ds.h"
 #include "npu-log.h"
 #include "npu-common.h"
@@ -222,20 +223,19 @@ int npu_session_NW_CMD_UNLOAD(struct npu_session *session)
 	struct npu_vertex_ctx *vctx;
 	struct npu_vertex *vertex;
 	struct npu_device *device;
+	nw_cmd_e nw_cmd = NPU_NW_CMD_UNLOAD;
 
 	vctx = &(session->vctx);
 	vertex = vctx->vertex;
 	device = container_of(vertex, struct npu_device, vertex);
 
-	if (!npu_device_is_emergency_err(device)) {
-		nw_cmd_e nw_cmd = NPU_NW_CMD_UNLOAD;
-		/* Post unload command */
-		npu_udbg("sending UNLOAD command.\n", session);
-		session->nw_result.result_code = NPU_NW_JUST_STARTED;
-		npu_session_put_nw_req(session, nw_cmd);
-	} else {
+	if (npu_device_is_emergency_err(device))
 		npu_udbg("NPU DEVICE IS EMERGENCY ERROR\n", session);
-	}
+
+	/* Post unload command */
+	npu_udbg("sending UNLOAD command.\n", session);
+	session->nw_result.result_code = NPU_NW_JUST_STARTED;
+	npu_session_put_nw_req(session, nw_cmd);
 
 	return ret;
 }
@@ -298,6 +298,8 @@ int npu_session_open(struct npu_session **session, void *cookie, void *memory)
 	(*session)->qbuf_IOFM_idx = -1;
 	(*session)->dqbuf_IOFM_idx = -1;
 
+	(*session)->pid	= task_pid_nr(current);
+
 	return ret;
 p_err:
 	npu_session_execute_undo_cb(*session);
@@ -307,7 +309,6 @@ p_err:
 int _undo_s_graph_each_state(struct npu_session *session)
 {
 	int ret = 0;
-	u32 ss_state;
 	u32 i = 0;
 	u32 IMB_cnt;
 	struct npu_memory *memory;
@@ -319,16 +320,15 @@ int _undo_s_graph_each_state(struct npu_session *session)
 	memory = session->memory;
 	IMB_cnt = session->IMB_cnt;
 
-	ss_state = session->ss_state;
-	if (ss_state <= BIT(NPU_SESSION_STATE_GRAPH_ION_MAP))
+	if (session->ss_state <= BIT(NPU_SESSION_STATE_GRAPH_ION_MAP))
 		goto graph_ion_unmap;
-	if (ss_state <= BIT(NPU_SESSION_STATE_WGT_KALLOC))
+	if (session->ss_state <= BIT(NPU_SESSION_STATE_WGT_KALLOC))
 		goto wgt_kfree;
-	if (ss_state <= BIT(NPU_SESSION_STATE_IOFM_KALLOC))
+	if (session->ss_state <= BIT(NPU_SESSION_STATE_IOFM_KALLOC))
 		goto iofm_kfree;
-	if (ss_state <= BIT(NPU_SESSION_STATE_IOFM_ION_ALLOC))
+	if (session->ss_state <= BIT(NPU_SESSION_STATE_IOFM_ION_ALLOC))
 		goto iofm_ion_unmap;
-	if (ss_state <= BIT(NPU_SESSION_STATE_IMB_ION_ALLOC))
+	if (session->ss_state <= BIT(NPU_SESSION_STATE_IMB_ION_ALLOC))
 		goto imb_ion_unmap;
 
 imb_ion_unmap:
@@ -385,18 +385,15 @@ graph_ion_unmap:
 int _undo_s_format_each_state(struct npu_session *session)
 {
 	int ret = 0;
-	u32 ss_state;
 
 	BUG_ON(!session);
 
-	ss_state = session->ss_state;
-
-	if (ss_state < BIT(NPU_SESSION_STATE_IMB_ION_ALLOC)) {
+	if (session->ss_state < BIT(NPU_SESSION_STATE_IMB_ION_ALLOC)) {
 		ret = -EINVAL;
 		goto p_err;
 	}
 
-	if (ss_state <= BIT(NPU_SESSION_STATE_FORMAT_OT)) {
+	if (session->ss_state <= BIT(NPU_SESSION_STATE_FORMAT_OT)) {
 		goto init_format;
 	}
 
@@ -409,18 +406,15 @@ p_err:
 int _undo_streamon_each_state(struct npu_session *session)
 {
 	int ret = 0;
-	u32 ss_state;
 
 	BUG_ON(!session);
 
-	ss_state = session->ss_state;
-
-	if (ss_state < BIT(NPU_SESSION_STATE_FORMAT_OT)) {
+	if (session->ss_state < BIT(NPU_SESSION_STATE_FORMAT_OT)) {
 		ret = -EINVAL;
 		goto p_err;
 	}
 
-	if (ss_state <= BIT(NPU_SESSION_STATE_START))
+	if (session->ss_state <= BIT(NPU_SESSION_STATE_START))
 		goto release_streamon;
 
 release_streamon:
@@ -432,17 +426,15 @@ p_err:
 int _undo_streamoff_each_state(struct npu_session *session)
 {
 	int ret = 0;
-	u32 ss_state;
 
 	BUG_ON(!session);
 
-	ss_state = session->ss_state;
-	if (ss_state < BIT(NPU_SESSION_STATE_START)) {
+	if (session->ss_state < BIT(NPU_SESSION_STATE_START)) {
 		ret = -EINVAL;
 		goto p_err;
 	}
 
-	if (ss_state <= BIT(NPU_SESSION_STATE_STOP))
+	if (session->ss_state <= BIT(NPU_SESSION_STATE_STOP))
 		goto release_streamoff;
 
 release_streamoff:
@@ -454,17 +446,15 @@ p_err:
 int _undo_close_each_state(struct npu_session *session)
 {
 	int ret = 0;
-	u32 ss_state;
 
 	BUG_ON(!session);
 
-	ss_state = session->ss_state;
-	if (ss_state < BIT(NPU_SESSION_STATE_STOP)) {
+	if (session->ss_state < BIT(NPU_SESSION_STATE_STOP)) {
 		ret = -EINVAL;
 		goto p_err;
 	}
 
-	if (ss_state <= BIT(NPU_SESSION_STATE_CLOSE))
+	if (session->ss_state <= BIT(NPU_SESSION_STATE_CLOSE))
 		goto session_close;
 
 session_close:
@@ -1115,14 +1105,14 @@ int npu_session_NW_CMD_STREAMOFF(struct npu_session *session)
 	vertex = vctx->vertex;
 	device = container_of(vertex, struct npu_device, vertex);
 
-	if (!npu_device_is_emergency_err(device)) {
-		npu_udbg("sending STREAM OFF command.\n", session);
-		profile_point1(PROBE_ID_DD_NW_RECEIVED, session->uid, 0, nw_cmd);
-		session->nw_result.result_code = NPU_NW_JUST_STARTED;
-		npu_session_put_nw_req(session, nw_cmd);
-		wait_event(session->wq, session->nw_result.result_code != NPU_NW_JUST_STARTED);
-		profile_point1(PROBE_ID_DD_NW_NOTIFIED, session->uid, 0, nw_cmd);
-	} else {
+	npu_udbg("sending STREAM OFF command.\n", session);
+	profile_point1(PROBE_ID_DD_NW_RECEIVED, session->uid, 0, nw_cmd);
+	session->nw_result.result_code = NPU_NW_JUST_STARTED;
+	npu_session_put_nw_req(session, nw_cmd);
+	wait_event(session->wq, session->nw_result.result_code != NPU_NW_JUST_STARTED);
+	profile_point1(PROBE_ID_DD_NW_NOTIFIED, session->uid, 0, nw_cmd);
+
+	if (npu_device_is_emergency_err(device)) {
 		npu_udbg("NPU DEVICE IS EMERGENCY ERROR !\n", session);
 		npu_udbg("sending CLEAR_CB command.\n", session);
 		npu_session_put_nw_req(session, NPU_NW_CMD_CLEAR_CB);
@@ -1620,18 +1610,15 @@ int npu_session_execute_undo_cb(struct npu_session *session)
 int npu_session_undo_open(struct npu_session *session)
 {
 	int ret = 0;
-	u32 ss_state;
 
 	BUG_ON(!session);
 
-	ss_state = session->ss_state;
-
-	if (ss_state < BIT(NPU_SESSION_STATE_OPEN)) {
+	if (session->ss_state < BIT(NPU_SESSION_STATE_OPEN)) {
 		ret = -EINVAL;
 		goto p_err;
 	}
 
-	if (ss_state <= BIT(NPU_SESSION_STATE_OPEN))
+	if (session->ss_state <= BIT(NPU_SESSION_STATE_OPEN))
 		goto session_free;
 
 	npu_sessionmgr_unregID(session->cookie, session);

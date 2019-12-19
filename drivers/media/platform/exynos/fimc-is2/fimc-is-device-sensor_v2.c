@@ -76,6 +76,8 @@ extern const struct fimc_is_subdev_ops fimc_is_subdev_ssvc2_ops;
 extern const struct fimc_is_subdev_ops fimc_is_subdev_ssvc3_ops;
 extern const struct fimc_is_subdev_ops fimc_is_subdev_bns_ops;
 
+DEFINE_MUTEX(camif_path_lock);
+
 int fimc_is_sensor_runtime_suspend(struct device *dev);
 int fimc_is_sensor_runtime_resume(struct device *dev);
 static int fimc_is_sensor_shot(struct fimc_is_device_ischain *device,
@@ -3329,12 +3331,23 @@ int fimc_is_sensor_front_start(struct fimc_is_device_sensor *device,
 	}
 
 	if (IS_ENABLED(USE_CAMIF_FIX_UP)) {
+		mutex_lock(&camif_path_lock);
 		ret = fimc_is_hw_camif_fix_up(device);
 		if (ret) {
 			merr("failed to fix up CAM I/F", device, ret);
 			ret = -EINVAL;
+			mutex_unlock(&camif_path_lock);
 			goto p_err;
 		}
+
+		ret = fimc_is_hw_camif_pdp_in_enable(device, true);
+		if (ret) {
+			merr("failed to enable PDP IN", device, ret);
+			ret = -EINVAL;
+			mutex_unlock(&camif_path_lock);
+			goto p_err;
+		}
+		mutex_unlock(&camif_path_lock);
 	}
 
 	/* Actuator Init because actuator init use cal data */
@@ -3435,6 +3448,12 @@ int fimc_is_sensor_front_stop(struct fimc_is_device_sensor *device)
 
 	set_bit(FIMC_IS_SENSOR_BACK_NOWAIT_STOP, &device->state);
 	clear_bit(FIMC_IS_SENSOR_FRONT_START, &device->state);
+
+	if (IS_ENABLED(USE_CAMIF_FIX_UP)) {
+		ret = fimc_is_hw_camif_pdp_in_enable(device, false);
+		if (ret)
+			merr("failed to enable PDP IN", device, ret);
+	}
 
 reset_the_others:
 	if (device->use_standby)

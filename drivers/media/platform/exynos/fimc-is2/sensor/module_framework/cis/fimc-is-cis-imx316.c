@@ -38,6 +38,7 @@
 #include "fimc-is-dt.h"
 #include "fimc-is-cis-imx316.h"
 #include "fimc-is-cis-imx316-setA.h"
+#include "fimc-is-cis-imx316-setB.h"
 #include "fimc-is-vender-specific.h"
 #include "fimc-is-helper-i2c.h"
 
@@ -78,6 +79,8 @@ static const u32 *sensor_imx316_uid;
 static u32 sensor_imx316_max_uid_num;
 static const u32 *sensor_imx316_setfile_sizes;
 static u32 sensor_imx316_max_setfile_num;
+static const u32 *sensor_imx316_vcsel_current_setting;
+static u32 sensor_imx316_vcsel_current_setting_size;
 
 int sensor_imx316_mode = -1;
 u16 sensor_imx316_HMAX;
@@ -389,12 +392,12 @@ int sensor_imx316_cis_mode_change(struct v4l2_subdev *subdev, u32 mode)
 
 	specific = core->vender.private_data;
 	if (sensor_peri->module->position == SENSOR_POSITION_REAR_TOF) {
-		sensor_uid = specific->rear_tof_uid;
+		sensor_uid = specific->rear_tof_uid[mode];
 	} else {  // SENSOR_POSITION_FRONT_TOF
 #ifdef USE_CAMERA_FRONT_TOF_TX_FREQ_VARIATION
 		sensor_imx316_front_tx_freq = FRONT_TX_DEFAULT_FREQ;
 #endif
-		sensor_uid = specific->front_tof_uid;
+		sensor_uid = specific->front_tof_uid[mode];
 	}
 
 	for (i = 0; i < sensor_imx316_max_uid_num; i++) {
@@ -1136,15 +1139,17 @@ static int cis_imx316_probe(struct i2c_client *client,
 		setfile = "default";
 	}
 
-	if (strcmp(setfile, "default") == 0 || strcmp(setfile, "setA") == 0) {
+	if (strcmp(setfile, "default") == 0 || strcmp(setfile, "setA") == 0) { /* KOR */
 		probe_info("%s setfile_A\n", __func__);
 		sensor_imx316_global = sensor_imx316_setfile_A_Global;
 		sensor_imx316_global_size = ARRAY_SIZE(sensor_imx316_setfile_A_Global);
 		sensor_imx316_setfiles = sensor_imx316_setfiles_A;
-		sensor_imx316_uid = sensor_imx316_setfiles_uid;
-		sensor_imx316_max_uid_num = ARRAY_SIZE(sensor_imx316_setfiles_uid);
+		sensor_imx316_uid = sensor_imx316_setfiles_A_uid;
+		sensor_imx316_max_uid_num = ARRAY_SIZE(sensor_imx316_setfiles_A_uid);
 		sensor_imx316_setfile_sizes = sensor_imx316_setfile_A_sizes;
 		sensor_imx316_max_setfile_num = ARRAY_SIZE(sensor_imx316_setfiles_A);
+		sensor_imx316_vcsel_current_setting = sensor_imx316_vcsel_current_setting_A;
+		sensor_imx316_vcsel_current_setting_size = sensor_imx316_vcsel_current_setting_A_size;
 #ifdef USE_CAMERA_FRONT_TOF_TX_FREQ_VARIATION
 		sensor_imx316_tx_freq_sensor_mode = sensor_imx316_setfile_A_tof_sensor_mode;
 		sensor_imx316_tx_freq_sensor_mode_size = ARRAY_SIZE(sensor_imx316_setfile_A_tof_sensor_mode);
@@ -1152,25 +1157,43 @@ static int cis_imx316_probe(struct i2c_client *client,
 		sensor_imx316_verify_sensor_mode_size = ARRAY_SIZE(sensor_imx316_setfile_A_verify_sensor_mode);
 #endif
 	}
-#if 0
-	else if (strcmp(setfile, "setB") == 0) {
+	else if (strcmp(setfile, "setB") == 0) { /* EUR OPEN */
 		probe_info("%s setfile_B\n", __func__);
 		sensor_imx316_global = sensor_imx316_setfile_B_Global;
 		sensor_imx316_global_size = ARRAY_SIZE(sensor_imx316_setfile_B_Global);
 		sensor_imx316_setfiles = sensor_imx316_setfiles_B;
+		sensor_imx316_uid = sensor_imx316_setfiles_B_uid;
+		sensor_imx316_max_uid_num = ARRAY_SIZE(sensor_imx316_setfiles_B_uid);
 		sensor_imx316_setfile_sizes = sensor_imx316_setfile_B_sizes;
 		sensor_imx316_max_setfile_num = ARRAY_SIZE(sensor_imx316_setfiles_B);
-	}
+		sensor_imx316_vcsel_current_setting = sensor_imx316_vcsel_current_setting_B;
+		sensor_imx316_vcsel_current_setting_size = sensor_imx316_vcsel_current_setting_B_size;
+#ifdef USE_CAMERA_FRONT_TOF_TX_FREQ_VARIATION
+		sensor_imx316_tx_freq_sensor_mode = sensor_imx316_setfile_B_tof_sensor_mode;
+		sensor_imx316_tx_freq_sensor_mode_size = ARRAY_SIZE(sensor_imx316_setfile_B_tof_sensor_mode);
+		sensor_imx316_verify_sensor_mode = sensor_imx316_setfile_B_verify_sensor_mode;
+		sensor_imx316_verify_sensor_mode_size = ARRAY_SIZE(sensor_imx316_setfile_B_verify_sensor_mode);
 #endif
+
+	}
 	else {
 		err("%s setfile index out of bound, take default (setfile_A)", __func__);
+		probe_info("%s setfile_A\n", __func__);
 		sensor_imx316_global = sensor_imx316_setfile_A_Global;
 		sensor_imx316_global_size = ARRAY_SIZE(sensor_imx316_setfile_A_Global);
 		sensor_imx316_setfiles = sensor_imx316_setfiles_A;
-		sensor_imx316_uid = sensor_imx316_setfiles_uid;
-		sensor_imx316_max_uid_num = ARRAY_SIZE(sensor_imx316_setfiles_uid);
+		sensor_imx316_uid = sensor_imx316_setfiles_A_uid;
+		sensor_imx316_max_uid_num = ARRAY_SIZE(sensor_imx316_setfiles_A_uid);
 		sensor_imx316_setfile_sizes = sensor_imx316_setfile_A_sizes;
 		sensor_imx316_max_setfile_num = ARRAY_SIZE(sensor_imx316_setfiles_A);
+		sensor_imx316_vcsel_current_setting = sensor_imx316_vcsel_current_setting_A;
+		sensor_imx316_vcsel_current_setting_size = sensor_imx316_vcsel_current_setting_A_size;
+#ifdef USE_CAMERA_FRONT_TOF_TX_FREQ_VARIATION
+		sensor_imx316_tx_freq_sensor_mode = sensor_imx316_setfile_A_tof_sensor_mode;
+		sensor_imx316_tx_freq_sensor_mode_size = ARRAY_SIZE(sensor_imx316_setfile_A_tof_sensor_mode);
+		sensor_imx316_verify_sensor_mode = sensor_imx316_setfile_A_verify_sensor_mode;
+		sensor_imx316_verify_sensor_mode_size = ARRAY_SIZE(sensor_imx316_setfile_A_verify_sensor_mode);
+#endif
 	}
 
 	/* belows are depend on sensor cis. MUST check sensor spec */

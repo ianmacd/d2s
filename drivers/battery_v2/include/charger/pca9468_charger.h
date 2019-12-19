@@ -286,6 +286,7 @@ static int adc_gain[16] = { 0, 1, 2, 3, 4, 5, 6, 7, -8, -7, -6, -5, -4, -3, -2, 
 #else
 #define PCA9468_PPS_PERIODIC_T	10000	// 10000ms
 #endif
+#define PCA9468_CVMODE_CHECK2_T	1000	// 1000ms
 
 /* Battery Threshold */
 #if defined(CONFIG_BATTERY_SAMSUNG)
@@ -346,7 +347,7 @@ static int adc_gain[16] = { 0, 1, 2, 3, 4, 5, 6, 7, -8, -7, -6, -5, -4, -3, -2, 
 /* TA voltage threshold starting Adjust CC mode */
 #define PCA9468_TA_MIN_VOL_CCADJ	8500000	// 8000000uV-->8500000uV
 
-#define PCA9468_TA_VOL_PRE_OFFSET	500000	// 200000uV --> 500000uV
+#define PCA9468_TA_VOL_PRE_OFFSET	600000	// 200000uV --> 500000uV
 /* Adjust CC mode TA voltage step */
 #if defined(CONFIG_SEC_FACTORY)
 #define PCA9468_TA_VOL_STEP_ADJ_CC	80000	// 80000uV
@@ -367,6 +368,10 @@ static int adc_gain[16] = { 0, 1, 2, 3, 4, 5, 6, 7, -8, -7, -6, -5, -4, -3, -2, 
 #define PCA9468_TA_MAX_VOL_CP		9800000	// 9760000uV --> 9800000uV
 /* maximum retry counter for restarting charging */
 #define PCA9468_MAX_RETRY_CNT		3		// 3times
+/* TA IIN tolerance */
+#define PCA9468_TA_IIN_OFFSET		100000	// 100mA
+/* IIN_CC upper protection offset in Power Limit Mode TA */
+#define PCA9468_IIN_CC_UPPER_OFFSET	150000	// 150mA
 
 /* PD Message Voltage and Current Step */
 #define PD_MSG_TA_VOL_STEP			20000	// 20mV
@@ -412,6 +417,7 @@ enum {
 	DC_STATE_ADJUST_TAVOL,	/* Adjust TA voltage to set new TA current under 1000mA input */
 
 	DC_STATE_ADJUST_TACUR,	/* Adjust TA current to set new TA current over 1000mA input */
+	DC_STATE_WC_CV_MODE,	/* Check WC(Wireless Charger) CV mode status */
 	DC_STATE_MAX,
 };
 
@@ -451,6 +457,7 @@ enum {
 
 	TIMER_ADJUST_TAVOL,
 	TIMER_ADJUST_TACUR,
+	TIMER_CHECK_WCCVMODE,
 };
 
 /* PD Message Type */
@@ -471,6 +478,7 @@ enum {
 	TA_NO_DC_MODE,
 	TA_2TO1_DC_MODE,
 	TA_4TO1_DC_MODE,
+	WC_DC_MODE,
 };
 
 /* IIN offset as the switching frequency in uA*/
@@ -478,7 +486,7 @@ static int iin_fsw_cfg[16] = { 9990, 10540, 11010, 11520, 12000, 12520, 12990, 1
 								5460, 6050, 6580, 7150, 7670, 8230, 8720, 9260 };
 
 struct pca9468_platform_data {
-	unsigned int	irq_gpio;	/* GPIO pin that's connected to INT# */
+	int	irq_gpio;	/* GPIO pin that's connected to INT# */
 	unsigned int	iin_cfg;	/* Input Current Limit - uA unit */
 	unsigned int 	ichg_cfg;	/* Charging Current - uA unit */
 	unsigned int	v_float;	/* V_Float Voltage - uV unit */

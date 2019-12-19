@@ -18,7 +18,7 @@ ifeq ($(CONFIG_RELOCATABLE), y)
 # Pass --no-apply-dynamic-relocs to restore pre-binutils-2.27 behaviour
 # for relative relocs, since this leads to better Image compression
 # with the relocation offsets always being zero.
-LDFLAGS_vmlinux		+= -pie -shared -Bsymbolic \
+LDFLAGS_vmlinux		+= -shared -Bsymbolic -z notext -z norelro \
 			$(call ld-option, --no-apply-dynamic-relocs)
 endif
 
@@ -43,6 +43,12 @@ KBUILD_DEFCONFIG := defconfig
 
 # Check for binutils support for specific extensions
 lseinstr := $(call as-instr,.arch_extension lse,-DCONFIG_AS_LSE=1)
+
+ifeq ($(CONFIG_SEC_ARM64_LSE_ATOMICS),y)
+  ifeq ($(cc-name),clang)
+lseinstr := -DCONFIG_AS_LSE=1
+  endif
+endif
 
 ifeq ($(CONFIG_ARM64_LSE_ATOMICS), y)
   ifeq ($(lseinstr),)
@@ -104,7 +110,7 @@ ifeq ($(CONFIG_ARM64_MODULE_CMODEL_LARGE), y)
 KBUILD_CFLAGS_MODULE	+= -mcmodel=large
 ifeq ($(CONFIG_LTO_CLANG), y)
 # Code model is not stored in LLVM IR, so we need to pass it also to LLVMgold
-KBUILD_LDFLAGS_MODULE	+= -plugin-opt=-code-model=large
+LDFLAGS		+= -plugin-opt=-code-model=large
 endif
 endif
 

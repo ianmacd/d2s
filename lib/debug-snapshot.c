@@ -92,61 +92,70 @@ struct dbg_snapshot_base ess_base;
 struct dbg_snapshot_log *dss_log = NULL;
 struct dbg_snapshot_desc dss_desc;
 
-void sec_debug_get_kevent_info(int type, unsigned long *paddr, unsigned int *nr)
+void sec_debug_get_kevent_info(struct ess_info_offset *p, int type)
 {
-	unsigned long kevent_base = (unsigned long)(dss_log->task);
+	unsigned long kevent_base_va = (unsigned long)(dss_log->task);
+	unsigned long kevent_base_pa = dss_items[dss_desc.kevents_num].entry.paddr;
 
 	switch (type) {
-	case DSS_KEVENT_PA:
-		(*paddr) = dss_items[dss_desc.kevents_num].entry.paddr;
-		(*nr) = 0;
+	case DSS_KEVENT_TASK:
+		p->base = kevent_base_pa + (unsigned long)(dss_log->task) - kevent_base_va;
+		p->nr = DSS_LOG_MAX_NUM;
+		p->size = sizeof(struct __task_log);
+		p->per_core = 1;
 		break;
 
-	case DSS_TASK_OFF:
-		(*paddr) = (unsigned int)((unsigned long)(dss_log->task) - kevent_base);
-		(*nr) = DSS_LOG_MAX_NUM;
+	case DSS_KEVENT_WORK:
+		p->base = kevent_base_pa + (unsigned long)(dss_log->work) - kevent_base_va;
+		p->nr = DSS_LOG_MAX_NUM;
+		p->size = sizeof(struct __work_log);
+		p->per_core = 1;
 		break;
 
-	case DSS_WORK_OFF:
-		(*paddr) = (unsigned int)((unsigned long)(dss_log->work) - kevent_base);
-		(*nr) = DSS_LOG_MAX_NUM;
+	case DSS_KEVENT_IRQ:
+		p->base = kevent_base_pa + (unsigned long)(dss_log->irq) - kevent_base_va;
+		p->nr = DSS_LOG_MAX_NUM * 2;
+		p->size = sizeof(struct __irq_log);
+		p->per_core = 1;
 		break;
 
-	case DSS_IRQ_OFF:
-		(*paddr) = (unsigned int)((unsigned long)(dss_log->irq) - kevent_base);
-		(*nr) = DSS_LOG_MAX_NUM * 2;
+	case DSS_KEVENT_FREQ:
+		p->base = kevent_base_pa + (unsigned long)(dss_log->freq) - kevent_base_va;
+		p->nr = DSS_LOG_MAX_NUM;
+		p->size = sizeof(struct __freq_log);
+		p->per_core = 0;
 		break;
 
-	case DSS_FREQ_OFF:
-		(*paddr) = (unsigned int)((unsigned long)(dss_log->freq) - kevent_base);
-		(*nr) = DSS_LOG_MAX_NUM;
+	case DSS_KEVENT_IDLE:
+		p->base = kevent_base_pa + (unsigned long)(dss_log->cpuidle) - kevent_base_va;
+		p->nr = DSS_LOG_MAX_NUM;
+		p->size = sizeof(struct __cpuidle_log);
+		p->per_core = 1;
 		break;
 
-	case DSS_IDLE_OFF:
-		(*paddr) = (unsigned int)((unsigned long)(dss_log->cpuidle) - kevent_base);
-		(*nr) = DSS_LOG_MAX_NUM;
+	case DSS_KEVENT_THRM:
+		p->base = kevent_base_pa + (unsigned long)(dss_log->thermal) - kevent_base_va;
+		p->nr = DSS_LOG_MAX_NUM;
+		p->size = sizeof(struct __thermal_log);
+		p->per_core = 0;
+		break;
+
+	case DSS_KEVENT_ACPM:
+		p->base = kevent_base_pa + (unsigned long)(dss_log->acpm) - kevent_base_va;
+		p->nr = DSS_LOG_MAX_NUM;
+		p->size = sizeof(struct __acpm_log);
+		p->per_core = 0;
 		break;
 
 	default:
-		(*paddr) = 0;
-		(*nr) = 0;
+		p->base = 0;
+		p->nr = 0;
+		p->size = 0;
+		p->per_core = 0;
 		break;
 	}
-}
 
-int dbg_snapshot_set_debug_level(int level)
-{
-	if (level > -1 && level < (int)ARRAY_SIZE(debug_level_val)) {
-		dss_desc.debug_level = level;
-	} else {
-#if !IS_ENABLED(CONFIG_DEBUG_SNAPSHOT_USER_MODE)
-		dss_desc.debug_level = DSS_DEBUG_LEVEL_MID;
-#else
-		dss_desc.debug_level = DSS_DEBUG_LEVEL_LOW;
-#endif
-	}
-	dbg_snapshot_set_debug_level_reg();
-	return 0;
+	p->last = sec_debug_get_kevent_index_addr(type);
 }
 
 int dbg_snapshot_get_debug_level(void)
@@ -273,6 +282,17 @@ static inline void dbg_snapshot_hook_logger(const char *name,
 #ifdef CONFIG_SEC_PM_DEBUG
 static bool sec_log_full;
 #endif
+
+size_t dbg_snapshot_get_curr_ptr_for_sysrq(void)
+{
+#ifdef CONFIG_SEC_DEBUG_SYSRQ_KMSG
+	struct dbg_snapshot_item *item = &dss_items[dss_desc.log_kernel_num];
+
+	return (size_t)item->curr_ptr;
+#else
+	return 0;
+#endif
+}
 
 static inline void dbg_snapshot_hook_logbuf(const char *buf, size_t size)
 {
@@ -783,14 +803,13 @@ static int __init dbg_snapshot_init_dt(void)
 
 static int __init dbg_snapshot_init_value(void)
 {
-	int val = dbg_snapshot_get_debug_level_reg();
-
-	dbg_snapshot_set_debug_level(val);
+	dss_desc.debug_level = dbg_snapshot_get_debug_level_reg();
 
 	pr_info("debug-snapshot: debug_level [%s]\n",
 		debug_level_val[dss_desc.debug_level]);
 
-	dbg_snapshot_scratch_reg(DSS_SIGN_SCRATCH);
+	if (dss_desc.debug_level != DSS_DEBUG_LEVEL_LOW)
+		dbg_snapshot_scratch_reg(DSS_SIGN_SCRATCH);
 
 	dbg_snapshot_set_sjtag_status();
 

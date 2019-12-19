@@ -147,6 +147,29 @@ MODULE_ALIAS_FS("ext3");
 MODULE_ALIAS("ext3");
 #define IS_EXT3_SB(sb) ((sb)->s_bdev->bd_holder == &ext3_fs_type)
 
+/*
+ * This works like sb_bread() except it uses ERR_PTR for error
+ * returns.  Currently with sb_bread it's impossible to distinguish
+ * between ENOMEM and EIO situations (since both result in a NULL
+ * return.
+ */
+struct buffer_head *
+ext4_sb_bread(struct super_block *sb, sector_t block, int op_flags)
+{
+	struct buffer_head *bh = sb_getblk(sb, block);
+
+	if (bh == NULL)
+		return ERR_PTR(-ENOMEM);
+	if (buffer_uptodate(bh))
+		return bh;
+	ll_rw_block(REQ_OP_READ, REQ_META | op_flags, 1, &bh);
+	wait_on_buffer(bh);
+	if (buffer_uptodate(bh))
+		return bh;
+	put_bh(bh);
+	return ERR_PTR(-EIO);
+}
+
 static int ext4_verify_csum_type(struct super_block *sb,
 				 struct ext4_super_block *es)
 {
@@ -1201,6 +1224,16 @@ static struct dentry *ext4_fh_to_parent(struct super_block *sb, struct fid *fid,
 				    ext4_nfs_get_inode);
 }
 
+static int ext4_nfs_commit_metadata(struct inode *inode)
+{
+	struct writeback_control wbc = {
+		.sync_mode = WB_SYNC_ALL
+	};
+
+	trace_ext4_nfs_commit_metadata(inode);
+	return ext4_write_inode(inode, &wbc);
+}
+
 /*
  * Try to release metadata pages (indirect blocks, directories) which are
  * mapped via the block device.  Since these pages could have journal heads
@@ -1309,14 +1342,15 @@ retry:
 	return res;
 }
 
-#ifdef CONFIG_DDAR
+#if defined(CONFIG_DDAR) || defined(CONFIG_FSCRYPT_SDP)
 static inline int ext4_get_knox_context(struct inode *inode,
 		const char *name, void *buffer, size_t buffer_size) {
 	return ext4_xattr_get(inode, EXT4_XATTR_INDEX_ENCRYPTION,	name, buffer, buffer_size);
 }
 static inline int ext4_set_knox_context(struct inode *inode,
-		const char *name, const void *value, size_t size) {
-	return ext4_xattr_set(inode, EXT4_XATTR_INDEX_ENCRYPTION, name, value, size, 0);
+		const char *name, const void *value, size_t size, void *fs_data) {
+	return ext4_xattr_set(inode, EXT4_XATTR_INDEX_ENCRYPTION,
+			name ? name : EXT4_XATTR_NAME_ENCRYPTION_CONTEXT, value, size, 0);
 }
 #endif
 
@@ -1329,7 +1363,7 @@ static const struct fscrypt_operations ext4_cryptops = {
 	.key_prefix		= "ext4:",
 	.get_context		= ext4_get_context,
 	.set_context		= ext4_set_context,
-#ifdef CONFIG_DDAR
+#if defined(CONFIG_DDAR) || defined(CONFIG_FSCRYPT_SDP)
 	.get_knox_context	= ext4_get_knox_context,
 	.set_knox_context	= ext4_set_knox_context,
 #endif
@@ -1417,6 +1451,7 @@ static const struct export_operations ext4_export_ops = {
 	.fh_to_dentry = ext4_fh_to_dentry,
 	.fh_to_parent = ext4_fh_to_parent,
 	.get_parent = ext4_get_parent,
+	.commit_metadata = ext4_nfs_commit_metadata,
 };
 
 enum {
@@ -4924,7 +4959,7 @@ static int ext4_commit_super(struct super_block *sb, int sync)
 	ext4_superblock_csum_set(sb);
 	if (sync)
 		lock_buffer(sbh);
-	if (buffer_write_io_error(sbh)) {
+	if (buffer_write_io_error(sbh) || !buffer_uptodate(sbh)) {
 		/*
 		 * Oh, dear.  A previous attempt to write the
 		 * superblock failed.  This could happen because the
@@ -5729,9 +5764,9 @@ static int ext4_quota_enable(struct super_block *sb, int type, int format_id,
 	qf_inode->i_flags |= S_NOQUOTA;
 	lockdep_set_quota_inode(qf_inode, I_DATA_SEM_QUOTA);
 	err = dquot_enable(qf_inode, type, format_id, flags);
-	iput(qf_inode);
 	if (err)
 		lockdep_set_quota_inode(qf_inode, I_DATA_SEM_NORMAL);
+	iput(qf_inode);
 
 	return err;
 }
@@ -5939,6 +5974,9 @@ void print_iloc_info(struct super_block *sb, struct ext4_iloc iloc)
 void print_bh(struct super_block *sb, struct buffer_head *bh
 		, int start, int len)
 {
+	if (ignore_fs_panic)
+		return;
+
 	if (bh) {
 		printk(KERN_ERR " print_bh: bh %p,"
 				" bh->b_size %lu, bh->b_data %p\n",

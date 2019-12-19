@@ -196,6 +196,13 @@ enum mfc_vb_flag {
 	MFC_FLAG_LAST_FRAME		= 31,
 };
 
+enum mfc_idle_mode {
+	MFC_IDLE_MODE_NONE	= 0,
+	MFC_IDLE_MODE_RUNNING	= 1,
+	MFC_IDLE_MODE_IDLE	= 2,
+	MFC_IDLE_MODE_CANCEL	= 3,
+};
+
 struct mfc_ctx;
 
 enum mfc_debug_cause {
@@ -846,6 +853,14 @@ struct mfc_dev {
 	struct workqueue_struct *watchdog_wq;
 	struct work_struct watchdog_work;
 
+	atomic_t hw_run_cnt;
+	atomic_t queued_cnt;
+	struct mutex idle_qos_mutex;
+	enum mfc_idle_mode idle_mode;
+	struct timer_list mfc_idle_timer;
+	struct workqueue_struct *mfc_idle_wq;
+	struct work_struct mfc_idle_work;
+
 	/* for DRM */
 	int curr_ctx_is_drm;
 	int num_drm_inst;
@@ -857,7 +872,6 @@ struct mfc_dev {
 
 #ifdef CONFIG_MFC_USE_BUS_DEVFREQ
 	struct list_head qos_queue;
-	spinlock_t qos_lock;
 	atomic_t qos_req_cur;
 	struct pm_qos_request qos_req_mfc;
 	struct pm_qos_request qos_req_int;
@@ -1126,14 +1140,15 @@ struct mfc_enc_params {
 	u8 pad_cb;
 	u8 pad_cr;
 
-	u8 fixed_target_bit;
 	u8 rc_mb;		/* H.264: MFCv5, MPEG4/H.263: MFCv6 */
 	u8 rc_pvc;
 	u8 rc_frame;
+	u8 drop_control;
 	u32 rc_bitrate;
 	u32 rc_framerate;
 	u16 rc_reaction_coeff;
 	u16 rc_frame_delta;	/* MFC6.1 Only */
+	u32 rc_framerate_res;
 
 	u32 config_qp;
 	u32 dynamic_qp;
@@ -1150,6 +1165,7 @@ struct mfc_enc_params {
 	u8 weighted_enable;
 	u8 roi_enable;
 	u8 ivf_header_disable;	/* VP8, VP9 */
+	u8 fixed_target_bit;
 
 	u32 check_color_range;
 	u32 color_range;
@@ -1577,6 +1593,7 @@ struct mfc_ctx {
 	struct list_head ts_list;
 	int ts_count;
 	int ts_is_full;
+	int ts_last_interval;
 
 	/* bitrate control for QoS*/
 	struct mfc_bitrate bitrate_array[MAX_TIME_INDEX];

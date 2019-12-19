@@ -1023,10 +1023,6 @@ int request_sensitivity(struct fimc_is_sensor_interface *itf,
 	camera2_sensor_uctl_t *sensor_uctl = NULL;
 	u32 i = 0;
 	u32 num_of_frame = 1;
-	u32 index = 0;
-	struct fimc_is_device_sensor_peri *sensor_peri = NULL;
-	struct fimc_is_sensor_ctl *module_ctl = NULL;
-	struct camera2_sensor_ctl *sensor_ctl = NULL;
 
 	FIMC_BUG(!itf);
 	FIMC_BUG(itf->magic != SENSOR_INTERFACE_MAGIC);
@@ -1044,6 +1040,23 @@ int request_sensitivity(struct fimc_is_sensor_interface *itf,
 			sensor_uctl->sensitivity = sensitivity;
 		}
 	}
+
+	return ret;
+}
+
+int set_previous_dm(struct fimc_is_sensor_interface *itf)
+{
+	int ret = 0;
+	u32 frame_count = 0;
+	u32 index = 0;
+	struct fimc_is_device_sensor_peri *sensor_peri = NULL;
+	struct fimc_is_sensor_ctl *module_ctl = NULL;
+	struct camera2_sensor_ctl *sensor_ctl = NULL;
+
+	FIMC_BUG(!itf);
+	FIMC_BUG(itf->magic != SENSOR_INTERFACE_MAGIC);
+
+	frame_count = get_frame_count(itf);
 
 	/* set previous values */
 	index = (frame_count - 1) % CAM2P0_UCTL_LIST_SIZE;
@@ -1064,13 +1077,8 @@ int request_sensitivity(struct fimc_is_sensor_interface *itf,
 		}
 	}
 
-	if (!IS_ERR_OR_NULL(sensor_uctl))
-		dbg_sensor(1, "[%s]: #=%d, sensitivity=%d, preCtrl=%d\n",
-				__func__, frame_count, sensor_uctl->sensitivity, sensor_ctl->sensitivity);
-
 	return ret;
 }
-
 
 int adjust_analog_gain(struct fimc_is_sensor_interface *itf,
 			u32 desired_long_analog_gain,
@@ -3006,6 +3014,40 @@ int get_open_close_hint(int* opening, int* closing) {
 	return 0;
 }
 
+int set_mainflash_duration(struct fimc_is_sensor_interface *itf, u32 mainflash_duration)
+{
+	int ret = 0;
+	u32 vsync_cnt = 0;
+
+	struct fimc_is_device_sensor_peri *sensor_peri = NULL;
+
+	WARN_ON(!itf);
+	WARN_ON(itf->magic != SENSOR_INTERFACE_MAGIC);
+
+	sensor_peri = container_of(itf, struct fimc_is_device_sensor_peri, sensor_interface);
+	WARN_ON(!sensor_peri);
+
+	vsync_cnt = get_vsync_count(itf);
+
+	if(mainflash_duration < 1) {
+		dbg_flash("[%s] duration(%d) is too short\n", __func__, mainflash_duration);
+		ret = -1;
+		goto p_err;
+	}
+	else if(mainflash_duration > 5) {
+		dbg_flash("[%s] duration(%d) is too long\n", __func__, mainflash_duration);
+		ret = -1;
+		goto p_err;
+	}
+
+	sensor_peri->flash->flash_ae.frm_num_main_fls[1] = vsync_cnt + mainflash_duration + 1;
+
+	dbg_flash("[%s] duration(%d)\n", __func__, mainflash_duration);
+
+p_err:
+	return ret;
+}
+
 int get_sensor_state(struct fimc_is_sensor_interface *itf)
 {
 	struct fimc_is_device_sensor *sensor;
@@ -3427,6 +3469,8 @@ int init_sensor_interface(struct fimc_is_sensor_interface *itf)
 	itf->cis_ext2_itf_ops.get_sensor_max_dynamic_fps = get_sensor_max_dynamic_fps;
 	itf->cis_ext2_itf_ops.get_static_mem = get_static_mem;
 	itf->cis_ext2_itf_ops.get_open_close_hint = get_open_close_hint;
+	itf->cis_ext2_itf_ops.set_mainflash_duration = set_mainflash_duration;
+	itf->cis_ext2_itf_ops.set_previous_dm = set_previous_dm;
 	itf->cis_ext_itf_ops.set_adjust_sync = set_adjust_sync;
 	itf->cis_ext_itf_ops.request_frame_length_line = request_frame_length_line;
 	itf->cis_ext_itf_ops.request_sensitivity = request_sensitivity;

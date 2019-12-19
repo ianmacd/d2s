@@ -716,6 +716,7 @@ static int mfc_enc_querybuf(struct file *file, void *priv,
 static int mfc_enc_qbuf(struct file *file, void *priv, struct v4l2_buffer *buf)
 {
 	struct mfc_ctx *ctx = fh_to_mfc_ctx(file->private_data);
+	struct mfc_dev *dev = ctx->dev;
 	int i, ret = -EINVAL;
 
 	mfc_debug_enter();
@@ -753,6 +754,8 @@ static int mfc_enc_qbuf(struct file *file, void *priv, struct v4l2_buffer *buf)
 		mfc_debug(4, "enc dst buf[%d] Q\n", buf->index);
 		ret = vb2_qbuf(&ctx->vq_dst, buf);
 	}
+
+	atomic_inc(&dev->queued_cnt);
 
 	mfc_debug_leave();
 	return ret;
@@ -884,6 +887,7 @@ static int __mfc_enc_ext_info(struct mfc_ctx *ctx)
 	val |= ENC_SET_FIXED_SLICE;
 	val |= ENC_SET_PVC_MODE;
 	val |= ENC_SET_RATIO_OF_INTRA;
+	val |= ENC_SET_DROP_CONTROL;
 
 	if (MFC_FEATURE_SUPPORT(dev, dev->pdata->color_aspect_enc))
 		val |= ENC_SET_COLOR_ASPECT;
@@ -998,7 +1002,7 @@ static int mfc_enc_g_ctrl(struct file *file, void *priv,
 
 static inline int __mfc_enc_h264_level(enum v4l2_mpeg_video_h264_level lvl)
 {
-	static unsigned int t[V4L2_MPEG_VIDEO_H264_LEVEL_5_1 + 1] = {
+	static unsigned int t[V4L2_MPEG_VIDEO_H264_LEVEL_5_2 + 1] = {
 		/* V4L2_MPEG_VIDEO_H264_LEVEL_1_0   */ 10,
 		/* V4L2_MPEG_VIDEO_H264_LEVEL_1B    */ 9,
 		/* V4L2_MPEG_VIDEO_H264_LEVEL_1_1   */ 11,
@@ -1015,6 +1019,7 @@ static inline int __mfc_enc_h264_level(enum v4l2_mpeg_video_h264_level lvl)
 		/* V4L2_MPEG_VIDEO_H264_LEVEL_4_2   */ 42,
 		/* V4L2_MPEG_VIDEO_H264_LEVEL_5_0   */ 50,
 		/* V4L2_MPEG_VIDEO_H264_LEVEL_5_1   */ 51,
+		/* V4L2_MPEG_VIDEO_H264_LEVEL_5_2   */ 52,
 	};
 	return t[lvl];
 }
@@ -1763,6 +1768,9 @@ static int __mfc_enc_set_param(struct mfc_ctx *ctx, struct v4l2_control *ctrl)
 	case V4L2_CID_MPEG_VIDEO_SEI_DISPLAY_PRIMARIES_2:
 		p->display_primaries_2 = ctrl->value;
 		break;
+	case V4L2_CID_MPEG_VIDEO_DROP_CONTROL:
+		p->drop_control = ctrl->value;
+		break;
 	case V4L2_CID_MPEG_MFC_HDR_USER_SHARED_HANDLE:
 		if (enc->sh_handle_hdr.fd == -1) {
 			enc->sh_handle_hdr.fd = ctrl->value;
@@ -1849,6 +1857,7 @@ static int __mfc_enc_set_ctrl_val(struct mfc_ctx *ctx, struct v4l2_control *ctrl
 	case V4L2_CID_MPEG_VIDEO_ROI_CONTROL:
 	case V4L2_CID_MPEG_VIDEO_YSUM:
 	case V4L2_CID_MPEG_VIDEO_RATIO_OF_INTRA:
+	case V4L2_CID_MPEG_VIDEO_DROP_CONTROL:
 		list_for_each_entry(ctx_ctrl, &ctx->ctrls, list) {
 			if (!(ctx_ctrl->type & MFC_CTRL_TYPE_SET))
 				continue;
@@ -1856,13 +1865,6 @@ static int __mfc_enc_set_ctrl_val(struct mfc_ctx *ctx, struct v4l2_control *ctrl
 			if (ctx_ctrl->id == ctrl->id) {
 				ctx_ctrl->has_new = 1;
 				ctx_ctrl->val = ctrl->value;
-				if (ctx_ctrl->id == \
-					V4L2_CID_MPEG_MFC51_VIDEO_FRAME_RATE_CH) {
-					ctx_ctrl->val &= ~(0xFFFF << 16);
-					ctx_ctrl->val |= ctx_ctrl->val << 16;
-					ctx_ctrl->val &= ~(0xFFFF);
-					ctx_ctrl->val |= p->rc_frame_delta & 0xFFFF;
-				}
 				if ((ctx_ctrl->id == \
 					V4L2_CID_MPEG_VIDEO_H264_HIERARCHICAL_CODING_LAYER_CH) ||
 					(ctx_ctrl->id == \

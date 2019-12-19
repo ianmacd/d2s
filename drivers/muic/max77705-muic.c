@@ -78,9 +78,6 @@ void max77705_usbc_opcode_write(struct max77705_usbc_platform_data *usbc_data,
 
 static bool debug_en_vps;
 static void max77705_muic_detect_dev(struct max77705_muic_data *muic_data, int irq);
-#if defined(CONFIG_CCIC_MAX77705)
-static int fw_update_dcd = 1;
-#endif
 
 struct max77705_muic_vps_data {
 	int				adc;
@@ -1381,10 +1378,9 @@ handle_attach:
 		ret = max77705_muic_attach_usb_path(muic_data, new_dev);
 		break;
 	case ATTACHED_DEV_TIMEOUT_OPEN_MUIC:
+		pr_info("%s DCD_TIMEOUT system_state = 0x%x\n", __func__, system_state);
 #if defined(CONFIG_CCIC_MAX77705)
-		if (fw_update_state == FW_UPDATE_END && fw_update_dcd) {
-			fw_update_dcd = 0;
-			pr_info("%s:%s DCD_TIMEOUT is recognized after F/W update\n", MUIC_DEV_NAME, __func__);
+		if (fw_update_state == FW_UPDATE_END && system_state < SYSTEM_RUNNING) {
 			/* TA Reset, D+ gnd */
 			max77705_muic_dp_reset(muic_data);
 
@@ -2154,6 +2150,13 @@ do {									\
 static void max77705_muic_free_irqs(struct max77705_muic_data *muic_data)
 {
 	pr_info("%s\n", __func__);
+
+	disable_irq(muic_data->irq_uiadc);
+	disable_irq(muic_data->irq_chgtyp);
+	disable_irq(muic_data->irq_fakvb);
+	disable_irq(muic_data->irq_dcdtmo);
+	disable_irq(muic_data->irq_vbadc);
+	disable_irq(muic_data->irq_vbusdet);
 
 	/* free MUIC IRQ */
 	FREE_IRQ(muic_data->irq_uiadc, muic_data, "muic-uiadc");

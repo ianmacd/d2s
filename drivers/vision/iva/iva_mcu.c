@@ -186,6 +186,8 @@ static bool iva_mcu_print_init_print_info(struct iva_dev_data *iva,
 	u32			tail;
 	int			lb_sz;
 
+	if (sh_mem == NULL) return false;
+
 	lb_sz = readl(&sh_mem->log_buf_size);
 	if (lb_sz & PRINT_CHARS_ALIGN_MASK) {
 		dev_err(dev, "%s() log_buf_size(0x%x) is not aligned to %d. ",
@@ -583,6 +585,12 @@ int32_t iva_mcu_boot_file(struct iva_dev_data *iva,
 	if (test_bit(IVA_ST_MCU_BOOT_DONE, &iva->state)) {
 		dev_warn(dev, "%s() already iva booted(0x%lx)\n",
 				__func__, iva->state);
+		return 0;
+	}
+
+	if (strncmp(mcu_file, IVA_MCU_FILE_PATH, sizeof(IVA_MCU_FILE_PATH))) {
+		dev_err(dev, "%s() mcu_file(%s) is wrong file path.\n",
+				__func__, mcu_file);
 		return 0;
 	}
 

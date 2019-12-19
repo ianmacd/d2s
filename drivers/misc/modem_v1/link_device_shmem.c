@@ -861,7 +861,7 @@ static int tx_frames_to_dev(struct mem_link_device *mld,
 		mif_pkt(skbpriv(skb)->sipc_ch, "LNK-TX", skb);
 #endif
 
-		dev_kfree_skb_any(skb);
+		dev_consume_skb_any(skb);
 	}
 
 	return (ret < 0) ? ret : tx_bytes;
@@ -985,21 +985,6 @@ static int tx_func(struct mem_link_device *mld, struct hrtimer *timer,
 		}
 	}
 #endif
-
-	if (unlikely(under_tx_flow_ctrl(mld, dev))) {
-		ret = check_tx_flow_ctrl(mld, dev);
-		if (ret < 0) {
-			if (ret == -EBUSY || ret == -ETIME) {
-				skb_queue_tail(skb_txq, skb);
-				need_schedule = true;
-			} else {
-				shmem_forced_cp_crash(mld, CRASH_REASON_MIF_TX_ERR,
-						"check_tx_flow_ctrl error");
-				need_schedule = false;
-			}
-			goto exit;
-		}
-	}
 
 	ret = txq_write(mld, dev, skb);
 	if (unlikely(ret < 0)) {
@@ -1149,7 +1134,7 @@ static int tx_frames_to_rb(struct sbd_ring_buffer *rb)
 #ifdef DEBUG_MODEM_IF_LINK_TX
 		mif_pkt(rb->ch, "LNK-TX", skb);
 #endif
-		dev_kfree_skb_any(skb);
+		dev_consume_skb_any(skb);
 	}
 
 	return (ret < 0) ? ret : tx_bytes;
@@ -1272,21 +1257,6 @@ static int sbd_tx_func(struct mem_link_device *mld, struct hrtimer *timer,
 		}
 	}
 #endif
-
-	if (unlikely(sbd_under_tx_flow_ctrl(rb))) {
-		ret = sbd_check_tx_flow_ctrl(rb);
-		if (ret < 0) {
-			if (ret == -EBUSY || ret == -ETIME) {
-				skb_queue_tail(&rb->skb_q, skb);
-				need_schedule = true;
-			} else {
-				shmem_forced_cp_crash(mld, CRASH_REASON_MIF_TX_ERR,
-						"check_sbd_tx_flow_ctrl error");
-				need_schedule = false;
-			}
-			goto exit;
-		}
-	}
 
 	ret = sbd_pio_tx(rb, skb);
 	if (unlikely(ret < 0)) {
@@ -1575,7 +1545,7 @@ static int xmit_udl(struct mem_link_device *mld, struct io_device *iod,
 	mif_pkt(ch, "LNK-TX", skb);
 #endif
 
-	dev_kfree_skb_any(skb);
+	dev_consume_skb_any(skb);
 
 exit:
 	return ret;
@@ -2228,7 +2198,7 @@ static void shmem_oom_handler_work(struct work_struct *ws)
 	/* try to page reclaim with GFP_KERNEL */
 	skb = alloc_skb(PAGE_SIZE - 512, GFP_KERNEL);
 	if (skb)
-		dev_kfree_skb_any(skb);
+		dev_consume_skb_any(skb);
 
 	/* need to disable the RX irq ?? */
 	msleep(200);
@@ -2634,7 +2604,7 @@ exit:
 }
 
 #ifdef CONFIG_MODEM_IF_NET_GRO
-long gro_flush_time = 0;
+long gro_flush_time = 10000;
 module_param(gro_flush_time, long, 0644);
 
 static void gro_flush_timer(struct link_device *ld)

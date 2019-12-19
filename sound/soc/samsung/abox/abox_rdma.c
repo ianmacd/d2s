@@ -1083,19 +1083,10 @@ static void __abox_rdma_compr_set_hw_params_legacy(struct device *dev,
 	rate = params_rate(params);
 	width = params_width(params);
 
-	switch (rate) {
-	case 384000:
-		upscale = 3;
-		dev_info(dev, "%s: 384kHz 32bit\n", __func__);
-		break;
-	case 192000:
-		upscale = 1;
-		dev_info(dev, "%s: 192kHz 24bit\n", __func__);
-		break;
-	default:
-		dev_warn(dev, "unsupported offload rate: %u\n", rate);
-		/* fall through */
-	case 48000:
+	if (rate <= 48000) {
+		if (rate != 48000)
+			dev_warn(dev, "unsupported offload rate: %u\n", rate);
+
 		if (width >= 24) {
 			upscale = 2;
 			dev_info(dev, "%s: 48kHz 24bit\n", __func__);
@@ -1103,7 +1094,12 @@ static void __abox_rdma_compr_set_hw_params_legacy(struct device *dev,
 			upscale = 0;
 			dev_info(dev, "%s: 48kHz 16bit\n", __func__);
 		}
-		break;
+	} else {
+		if (rate != 192000)
+			dev_warn(dev, "unsupported offload rate: %u\n", rate);
+
+		upscale = 1;
+		dev_info(dev, "%s: 192kHz 24bit\n", __func__);
 	}
 
 	if (abox_rdma_mailbox_read(dev, COMPR_UPSCALE) != upscale) {
@@ -1150,10 +1146,15 @@ static int abox_rdma_compr_get_hw_params(struct snd_compr_stream *stream,
 	abox_hw_params_fixup_helper(rtd, params, stream->direction);
 
 	upscale = abox_rdma_mailbox_read(dev, COMPR_UPSCALE);
-	if (upscale <= 0xF)
+	if (upscale <= 0xF) {
 		__abox_rdma_compr_set_hw_params_legacy(dev, params);
-	else
+		upscale = abox_rdma_mailbox_read(dev, COMPR_UPSCALE);
+		__abox_rdma_compr_get_hw_params_legacy(dev, params, upscale);
+	} else {
 		__abox_rdma_compr_set_hw_params(dev, params);
+		upscale = abox_rdma_mailbox_read(dev, COMPR_UPSCALE);
+		__abox_rdma_compr_get_hw_params(dev, params, upscale);
+	}
 
 	return 0;
 }
@@ -1347,6 +1348,9 @@ static irqreturn_t abox_rdma_ipc_handler(int ipc, void *dev_id,
 		break;
 	case PCM_PLTDAI_ACK:
 		data->ack_enabled = !!pcmtask_msg->param.trigger;
+		break;
+	case PCM_PLTDAI_CLOSED:
+		complete(&data->closed);
 		break;
 	default:
 		dev_warn(dev, "unknown message: %d\n", pcmtask_msg->msgtype);
@@ -1695,6 +1699,7 @@ static int abox_rdma_close(struct snd_pcm_substream *substream)
 	struct abox_data *abox_data = data->abox_data;
 	int id = data->id;
 	int ret;
+	long time;
 	ABOX_IPC_MSG msg;
 	struct IPC_PCMTASK_MSG *pcmtask_msg = &msg.msg.pcmtask;
 
@@ -1715,6 +1720,11 @@ static int abox_rdma_close(struct snd_pcm_substream *substream)
 		if (ret < 0)
 			dev_warn(dev, "call notify failed: %d\n", ret);
 	}
+
+	time = wait_for_completion_timeout(&data->closed,
+			nsecs_to_jiffies(ABOX_DMA_TIMEOUT_NS));
+	if (time == 0)
+		dev_err(dev, "%s: timeout\n", __func__);
 
 	/* Release ASRC to reuse it in other DMA */
 	abox_cmpnt_asrc_release(abox_data->cmpnt, SNDRV_PCM_STREAM_PLAYBACK, id);
@@ -2325,6 +2335,7 @@ static int samsung_abox_rdma_probe(struct platform_device *pdev)
 	init_waitqueue_head(&data->compr_data.flush_wait);
 	init_waitqueue_head(&data->compr_data.exit_wait);
 	init_waitqueue_head(&data->compr_data.ipc_wait);
+	init_completion(&data->closed);
 	data->compr_data.isr_handler = abox_rdma_compr_isr_handler;
 
 	abox_register_ipc_handler(data->dev_abox, IPC_PCMPLAYBACK,

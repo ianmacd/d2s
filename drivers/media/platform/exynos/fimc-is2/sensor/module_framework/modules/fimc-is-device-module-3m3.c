@@ -130,6 +130,7 @@ static int sensor_module_3m3_power_setpin(struct device *dev,
 	int gpio_none = 0;
 	int gpio_subcam_sel = 0;
 	u32 power_seq_id = 0;
+	bool use_mclk_share = false;
 
 	FIMC_BUG(!dev);
 
@@ -174,6 +175,11 @@ static int sensor_module_3m3_power_setpin(struct device *dev,
 		power_seq_id = 0;
 	}
 
+	use_mclk_share = of_property_read_bool(dnode, "use_mclk_share");
+	if (use_mclk_share) {
+		dev_info(dev, "use_mclk_share(%d)", use_mclk_share);
+	}
+
 	SET_PIN_INIT(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON);
 	SET_PIN_INIT(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF);
 	SET_PIN_INIT(pdata, SENSOR_SCENARIO_VISION, GPIO_SCENARIO_ON);
@@ -212,8 +218,10 @@ static int sensor_module_3m3_power_setpin(struct device *dev,
 	SET_PIN_SHARED(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON, SRT_ACQUIRE,
 			&core->shared_rsc_slock[SHARED_PIN0], &core->shared_rsc_count[SHARED_PIN0], 1);
 	SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON, gpio_none, "MCLK", PIN_MCLK, 1, 0);
-	SET_PIN_SHARED(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON, SRT_ACQUIRE,
-			&core->shared_rsc_slock[SHARED_PIN8], &core->shared_rsc_count[SHARED_PIN8], 1);
+	if (use_mclk_share) {
+		SET_PIN_SHARED(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON, SRT_ACQUIRE,
+				&core->shared_rsc_slock[SHARED_PIN8], &core->shared_rsc_count[SHARED_PIN8], 1);
+	}
 
 	/* 10ms delay is needed for I2C communication of the AK7371 actuator */
 	SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON, gpio_reset, "sen_rst high", PIN_OUTPUT, 1, 8000);
@@ -251,8 +259,10 @@ static int sensor_module_3m3_power_setpin(struct device *dev,
 #endif
 	/* Mclock disable */
 	SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, gpio_none, "MCLK", PIN_MCLK, 0, 0);
-	SET_PIN_SHARED(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, SRT_RELEASE,
-			&core->shared_rsc_slock[SHARED_PIN8], &core->shared_rsc_count[SHARED_PIN8], 0);
+	if (use_mclk_share) {
+		SET_PIN_SHARED(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, SRT_RELEASE,
+				&core->shared_rsc_slock[SHARED_PIN8], &core->shared_rsc_count[SHARED_PIN8], 0);
+	}
 	SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, gpio_none, "pin", PIN_FUNCTION, 0, 0);
 	SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, gpio_none, "pin", PIN_FUNCTION, 1, 0);
 	SET_PIN_SHARED(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, SRT_RELEASE,

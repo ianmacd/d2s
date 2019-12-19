@@ -66,6 +66,10 @@ struct fault_info {
 
 static const struct fault_info fault_info[];
 
+#ifdef CONFIG_SEC_DEBUG_AVOID_UNNECESSARY_TRAP
+unsigned long long incorrect_addr = 0;
+#endif
+
 static inline const struct fault_info *esr_to_fault_info(unsigned int esr)
 {
 	return fault_info + (esr & 63);
@@ -138,7 +142,9 @@ static void mem_abort_decode(unsigned int esr)
 
 static inline phys_addr_t show_virt_to_phys(unsigned long addr)
 {
-	if (!is_vmalloc_addr((void *)addr))
+	if (!is_vmalloc_addr((void *)addr) ||
+		(addr >= (unsigned long) KERNEL_START &&
+		 addr <= (unsigned long) KERNEL_END))
 		return __pa(addr);
 	else
 		return page_to_phys(vmalloc_to_page((void *)addr)) +
@@ -690,10 +696,14 @@ static int do_sea(unsigned long addr, unsigned int esr, struct pt_regs *regs)
 	const struct fault_info *inf;
 	int ret = 0;
 
+#ifdef CONFIG_SEC_DEBUG_AVOID_UNNECESSARY_TRAP
+	incorrect_addr = (unsigned long long)addr;
+#endif
+
 	inf = esr_to_fault_info(esr);
+
 	pr_auto(ASL1, "%s (0x%08x) at 0x%016lx[0x%09lx]\n",
 		      inf->name, esr, addr, show_virt_to_phys(addr));
-
 	/*
 	 * Synchronous aborts may interrupt code which had interrupts masked.
 	 * Before calling out into the wider kernel tell the interested
@@ -939,11 +949,12 @@ void __init hook_debug_fault_code(int nr,
 	debug_fault_info[nr].name	= name;
 }
 
-asmlinkage int __exception do_debug_exception(unsigned long addr,
+asmlinkage int __exception do_debug_exception(unsigned long addr_if_watchpoint,
 					      unsigned int esr,
 					      struct pt_regs *regs)
 {
 	const struct fault_info *inf = debug_fault_info + DBG_ESR_EVT(esr);
+	unsigned long pc = instruction_pointer(regs);
 	struct siginfo info;
 	int rv;
 
@@ -954,19 +965,19 @@ asmlinkage int __exception do_debug_exception(unsigned long addr,
 	if (interrupts_enabled(regs))
 		trace_hardirqs_off();
 
-	if (user_mode(regs) && instruction_pointer(regs) > TASK_SIZE)
+	if (user_mode(regs) && pc > TASK_SIZE)
 		arm64_apply_bp_hardening();
 
-	if (!inf->fn(addr, esr, regs)) {
+	if (!inf->fn(addr_if_watchpoint, esr, regs)) {
 		rv = 1;
 	} else {
 		pr_alert("Unhandled debug exception: %s (0x%08x) at 0x%016lx\n",
-			 inf->name, esr, addr);
+			 inf->name, esr, pc);
 
 		info.si_signo = inf->sig;
 		info.si_errno = 0;
 		info.si_code  = inf->code;
-		info.si_addr  = (void __user *)addr;
+		info.si_addr  = (void __user *)pc;
 		arm64_notify_die("", regs, &info, 0);
 		rv = 0;
 	}

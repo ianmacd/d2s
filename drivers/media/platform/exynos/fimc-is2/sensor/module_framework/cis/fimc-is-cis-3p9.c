@@ -175,7 +175,7 @@ static int sensor_3p9_wait_stream_off_status(cis_shared_data *cis_data)
 int sensor_3p9_cis_select_setfile(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
-	u8 rev = 0;
+	u32 rev = 0;
 	struct fimc_is_cis *cis = NULL;
 
 	WARN_ON(!subdev);
@@ -187,7 +187,7 @@ int sensor_3p9_cis_select_setfile(struct v4l2_subdev *subdev)
 	rev = cis->cis_data->cis_rev;
 
 	switch (rev) {
-	case 0xA1: /* 3P9SN */
+	case 0xA101: /* 3P9SN */
 		pr_info("%s setfile_A(3P9SN)\n", __func__);
 		sensor_3p9_global = sensor_3p9_setfile_A_Global;
 		sensor_3p9_global_size = sizeof(sensor_3p9_setfile_A_Global) / sizeof(sensor_3p9_setfile_A_Global[0]);
@@ -225,11 +225,6 @@ int sensor_3p9_cis_init(struct v4l2_subdev *subdev)
 	struct fimc_is_cis *cis;
 	u32 setfile_index = 0;
 	cis_setting_info setinfo;
-#ifdef USE_CAMERA_HW_BIG_DATA
-	struct cam_hw_param *hw_param = NULL;
-	struct fimc_is_device_sensor_peri *sensor_peri = NULL;
-#endif
-
 	setinfo.param = NULL;
 	setinfo.return_value = 0;
 
@@ -243,22 +238,16 @@ int sensor_3p9_cis_init(struct v4l2_subdev *subdev)
 	}
 
 	FIMC_BUG(!cis->cis_data);
+#if !defined(CONFIG_VENDER_MCD)
 	memset(cis->cis_data, 0, sizeof(cis_shared_data));
-	cis->rev_flag = false;
 
 	ret = sensor_cis_check_rev(cis);
 	if (ret < 0) {
-#ifdef USE_CAMERA_HW_BIG_DATA
-		sensor_peri = container_of(cis, struct fimc_is_device_sensor_peri, cis);
-		if (sensor_peri)
-			fimc_is_sec_get_hw_param(&hw_param, sensor_peri->module->position);
-		if (hw_param)
-			hw_param->i2c_sensor_err_cnt++;
-#endif
 		warn("sensor_3p9_check_rev is fail when cis init");
-		cis->rev_flag = true;
-		ret = 0;
+		ret = -EINVAL;
+		goto p_err;
 	}
+#endif
 
 	ret = sensor_3p9_cis_select_setfile(subdev);
 
@@ -266,6 +255,7 @@ int sensor_3p9_cis_init(struct v4l2_subdev *subdev)
 	cis->cis_data->cur_height = SENSOR_3P9_MAX_HEIGHT;
 	cis->cis_data->low_expo_start = 33000;
 	cis->need_mode_change = false;
+	cis->cis_data->dual_slave = false;
 
 	sensor_3p9_cis_data_calculation(sensor_3p9_pllinfos[setfile_index], cis->cis_data);
 
@@ -491,16 +481,6 @@ int sensor_3p9_cis_mode_change(struct v4l2_subdev *subdev, u32 mode)
 		goto p_err;
 	}
 
-	/* If check_rev fail when cis_init, one more check_rev in mode_change */
-	if (cis->rev_flag == true) {
-		cis->rev_flag = false;
-		ret = sensor_cis_check_rev(cis);
-		if (ret < 0) {
-			err("sensor_3p9_check_rev is fail");
-			goto p_err;
-		}
-	}
-
 	if (cis->use_pdaf == true) {
 		sensor_3p9_cis_data_calculation(sensor_3p9_pdaf_pllinfos[mode], cis->cis_data);
 		ret = sensor_cis_set_registers(subdev, sensor_3p9_pdaf_setfiles[mode], sensor_3p9_pdaf_setfile_sizes[mode]);
@@ -523,9 +503,11 @@ int sensor_3p9_cis_mode_change(struct v4l2_subdev *subdev, u32 mode)
 		) {
 		info("[%s]dual sync slave mode\n", __func__);
 		ret = sensor_cis_set_registers(subdev, sensor_3p9_dualsync_slave, sensor_3p9_dualsync_slave_size);
+		cis->cis_data->dual_slave = true;
 	} else {
 		info("[%s]dual sync master mode\n", __func__);
 		ret = sensor_cis_set_registers(subdev, sensor_3p9_dualsync_master, sensor_3p9_dualsync_master_size);
+		cis->cis_data->dual_slave = false;
 	}
 
 	if (ret < 0) {
@@ -1842,6 +1824,7 @@ static struct fimc_is_cis_ops cis_ops = {
 	.cis_compensate_gain_for_extremely_br = sensor_cis_compensate_gain_for_extremely_br,
 	.cis_wait_streamoff = sensor_cis_wait_streamoff,
 	.cis_wait_streamon = sensor_cis_wait_streamon,
+	.cis_check_rev_on_init = sensor_cis_check_rev_on_init,
 	.cis_set_initial_exposure = sensor_cis_set_initial_exposure,
 	.cis_recover_stream_on = sensor_3p9_cis_recover_stream_on,
 	.cis_set_factory_control = sensor_3p9_cis_set_factory_control,
@@ -1962,6 +1945,8 @@ static int cis_3p9_probe(struct i2c_client *client,
 	v4l2_set_subdevdata(subdev_cis, cis);
 	v4l2_set_subdev_hostdata(subdev_cis, device);
 	snprintf(subdev_cis->name, V4L2_SUBDEV_NAME_SIZE, "cis-subdev.%d", cis->id);
+
+	sensor_cis_parse_dt(dev, cis->subdev);
 
 	probe_info("%s done\n", __func__);
 

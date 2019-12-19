@@ -108,16 +108,9 @@ static void dbg_snapshot_report_reason(unsigned int val)
 		__raw_writel(val, dbg_snapshot_get_base_vaddr() + DSS_OFFSET_EMERGENCY_REASON);
 }
 
-void dbg_snapshot_set_debug_level_reg(void)
-{
-	if (dbg_snapshot_get_enable("header"))
-		__raw_writel(dss_desc.debug_level | DSS_DEBUG_LEVEL_PREFIX,
-			dbg_snapshot_get_base_vaddr() + DSS_OFFSET_DEBUG_LEVEL);
-}
-
 int dbg_snapshot_get_debug_level_reg(void)
 {
-	int ret = DSS_DEBUG_LEVEL_NONE;
+	int ret = DSS_DEBUG_LEVEL_MID;
 
 	if (dbg_snapshot_get_enable("header")) {
 		int val = __raw_readl(dbg_snapshot_get_base_vaddr() + DSS_OFFSET_DEBUG_LEVEL);
@@ -631,7 +624,11 @@ void dbg_snapshot_panic_handler_safe(void)
 
 	dbg_snapshot_report_reason(DSS_SIGN_SAFE_FAULT);
 	dbg_snapshot_dump_panic(text, len);
+#ifdef CONFIG_SEC_DEBUG
+	dss_soc_ops->soc_expire_watchdog((void *)_RET_IP_);
+#else
 	dss_soc_ops->soc_expire_watchdog((void *)NULL);
+#endif
 }
 
 void dbg_snapshot_register_soc_ops(struct dbg_snapshot_helper_ops *ops)

@@ -33,6 +33,7 @@
 #include <linux/ip.h>
 #include <linux/tcp.h>
 #include <linux/netdevice.h>
+#include <uapi/linux/net_dropdump.h>
 
 #ifdef CONFIG_SEC_SIPC_DUAL_MODEM_IF
 #include <linux/modem_notifier.h>
@@ -45,6 +46,8 @@
 #include "modem_prj.h"
 #include "modem_utils.h"
 #include "modem_klat.h"
+
+int receive_first_ipc;
 
 static u8 sipc5_build_config(struct io_device *iod, struct link_device *ld,
 			     unsigned int count);
@@ -215,7 +218,7 @@ exit:
 		struct mem_link_device *mld = ld_to_mem_link_device(ld);
 
 		if (atomic_read(&mc->pcie_pwron)) {
-			mod_timer(&mld->cp_not_work, jiffies + 5 * 60 * HZ);
+			mod_timer(&mld->cp_not_work, jiffies + mld->not_work_time * HZ);
 		}
 	}
 #endif
@@ -392,6 +395,7 @@ static int rx_multi_pdp(struct sk_buff *skb)
 
 	skb_reset_transport_header(skb);
 	skb_reset_network_header(skb);
+	skb_reset_mac_header(skb);
 
 #ifdef CONFIG_LINK_FORWARD
 	/* Link Forward */
@@ -403,15 +407,11 @@ static int rx_multi_pdp(struct sk_buff *skb)
 
 	if (!l2forward) {
 		/* klat */
-		if (klat_rx(skb, skbpriv(skb)->sipc_ch - SIPC_CH_ID_PDP_0)) {
-			if (skb->dev) {
-				skb->dev->stats.rx_packets++;
-				skb->dev->stats.rx_bytes += skb->len;
-			}
-		} else {
-			ndev->stats.rx_packets++;
-			ndev->stats.rx_bytes += skb->len;
-		}
+		klat_rx(skb, skbpriv(skb)->sipc_ch - SIPC_CH_ID_PDP_0);
+
+		ndev->stats.rx_packets++;
+		ndev->stats.rx_bytes += skb->len;
+
 #ifdef CONFIG_MCPS
 		if(!mcps_try_gro(skb)) {
 			return len;
@@ -482,9 +482,10 @@ static int rx_demux(struct link_device *ld, struct sk_buff *skb)
 		return -ENODEV;
 	}
 
-	if (sipc5_fmt_ch(ch))
+	if (sipc5_fmt_ch(ch)) {
+		receive_first_ipc = 1;
 		return rx_fmt_ipc(skb);
-	else if (sipc_ps_ch(ch))
+	} else if (sipc_ps_ch(ch))
 		return rx_multi_pdp(skb);
 	else
 		return rx_raw_misc(skb);
@@ -1094,6 +1095,9 @@ static ssize_t misc_write(struct file *filp, const char __user *data,
 		headroom = 0;
 	}
 
+	if (unlikely(!receive_first_ipc) && sipc5_log_ch(iod->id))
+		return -EBUSY;
+
 	while (copied < cnt) {
 		remains = cnt - copied;
 		alloc_size = min_t(unsigned int, remains + headroom,
@@ -1454,6 +1458,7 @@ retry:
 drop:
 	ndev->stats.tx_dropped++;
 
+	DROPDUMP_QPCAP_SKB(skb, NET_DROPDUMP_OPT_MIF_TXFAIL);
 	dev_kfree_skb_any(skb);
 
 	/*

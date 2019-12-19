@@ -25,7 +25,7 @@
 #include <linux/of_gpio.h>
 #include <linux/smc.h>
 #include <linux/modem_notifier.h>
-#include <linux/sec_sysfs.h>
+#include <linux/sec_class.h>
 #include <linux/clk.h>
 #include <linux/pm_runtime.h>
 #include <linux/pci.h>
@@ -1030,8 +1030,8 @@ static int s5100_pm_notifier(struct notifier_block *notifier,
 	case PM_SUSPEND_PREPARE:
 		mif_info("Suspend prepare - Disable GPIO interrupts\n");
 		if (g_mc) {
-			mif_disable_irq(&g_mc->s5100_irq_phone_active);
-			mif_disable_irq(&g_mc->s5100_irq_ap_wakeup);
+			mif_disable_irq_sync(&g_mc->s5100_irq_phone_active);
+			mif_disable_irq_sync(&g_mc->s5100_irq_ap_wakeup);
 		}
 		break;
 	case PM_POST_SUSPEND:

@@ -44,7 +44,6 @@
 void exynos_usb_audio_set_device(struct usb_device *udev)
 {
 	usb_audio->udev = udev;
-	usb_audio->is_audio = 1;
 }
 
 int exynos_usb_audio_map_buf(struct usb_device *udev)
@@ -210,7 +209,8 @@ int exynos_usb_audio_setintf(struct usb_device *udev, int iface, int alt, int di
 	}
 
 	if (DEBUG)
-		dev_info(&udev->dev, "USB_AUDIO_IPC : %s ", __func__);
+		dev_info(&udev->dev, "USB_AUDIO_IPC : %s, alt = %d\n",
+				__func__, alt);
 
 	if (!usb_audio->is_audio || !otg_connection) {
 		dev_info(dev, "USB_AUDIO_IPC : is_audio is 0. return!\n");
@@ -244,6 +244,11 @@ int exynos_usb_audio_setintf(struct usb_device *udev, int iface, int alt, int di
 			if (!left_time)
 				dev_info(dev, "%s: timeout for IN connection done\n");
 		}
+	}
+
+	if (!usb_audio->is_audio || !otg_connection) {
+		dev_info(dev, "USB_AUDIO_IPC : is_audio = 0. return!\n");
+		return -1;
 	}
 
 	mutex_lock(&usb_audio->lock);
@@ -353,6 +358,12 @@ int exynos_usb_audio_setintf(struct usb_device *udev, int iface, int alt, int di
 
 		erap_usb->param3 = lower_32_bits(le64_to_cpu(hwinfo->out_deq));
 		erap_usb->param4 = upper_32_bits(le64_to_cpu(hwinfo->out_deq));
+	}
+
+	/* one more check connection to prevent kernel panic */
+	if (!usb_audio->is_audio || !otg_connection) {
+		dev_info(dev, "USB_AUDIO_IPC : is_audio is 0. return!\n");
+		return -1;
 	}
 
 	ret = abox_start_ipc_transaction(dev, msg.ipcid, &msg, sizeof(msg), 0, 1);
@@ -510,13 +521,15 @@ int exynos_usb_audio_desc(struct usb_device *udev)
 		if (udev->config[i].desc.bConfigurationValue ==
 				configuration) {
 			cfgno = i;
-			pr_info("%s - chosen = %d\n", __func__, i);
+			pr_info("%s - chosen = %d, c = %d\n", __func__,
+				i, configuration);
 			break;
 		}
 	}
 
 	if (cfgno == -1) {
-		pr_info("%s - configuration selection error\n", __func__);
+		pr_info("%s - config select error, i=%d, c=%d\n",
+			__func__, i, configuration);
 		cfgno = 0;
 	}
 
@@ -637,7 +650,8 @@ int exynos_usb_audio_pcm(int is_open, int direction)
 
 	if (is_open)
 		usb_audio->pcm_open_done = 1;
-	dev_info(dev, "PCM  %s\n", is_open? "OPEN" : "CLOSE");
+	dev_info(dev, "PCM %s dir %s\n", is_open? "OPEN" : "CLOSE",
+				direction ? "IN" : "OUT");
 
 	msg.ipcid = IPC_ERAP;
 	erap_msg->msgtype = REALTIME_USB;

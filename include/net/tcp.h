@@ -57,6 +57,8 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
 
 #define MAX_TCP_HEADER	(128 + MAX_HEADER)
 #define MAX_TCP_OPTION_SPACE 40
+#define TCP_MIN_SND_MSS		48
+#define TCP_MIN_GSO_SIZE	(TCP_MIN_SND_MSS - MAX_TCP_OPTION_SPACE)
 
 /*
  * Never offer a window over 32767 without using window scaling. Some
@@ -306,6 +308,10 @@ extern int sysctl_tcp_invalid_ratelimit;
 extern int sysctl_tcp_pacing_ss_ratio;
 extern int sysctl_tcp_pacing_ca_ratio;
 extern int sysctl_tcp_default_init_rwnd;
+#ifdef CONFIG_NETPM
+extern int sysctl_tcp_netpm[4];
+extern struct net_device *ip6_dev_find(struct net *net, const struct in6_addr *addr);
+#endif
 
 extern atomic_long_t tcp_memory_allocated;
 extern struct percpu_counter tcp_sockets_allocated;
@@ -373,12 +379,6 @@ extern struct proto tcp_prot;
 #define __TCP_INC_STATS(net, field)	__SNMP_INC_STATS((net)->mib.tcp_statistics, field)
 #define TCP_DEC_STATS(net, field)	SNMP_DEC_STATS((net)->mib.tcp_statistics, field)
 #define TCP_ADD_STATS(net, field, val)	SNMP_ADD_STATS((net)->mib.tcp_statistics, field, val)
-
-#ifdef CONFIG_NET_SUPPORT_DROPDUMP
-#define TCP_DUMP_STATS(skb, field)	dev_queue_mib(skb, 3, field)
-#else
-#define TCP_DUMP_STATS(skb, field)
-#endif
 
 #ifdef CONFIG_MPTCP
 /**** START - Exports needed for MPTCP ****/
@@ -1224,7 +1224,8 @@ void tcp_get_default_congestion_control(char *name);
 void tcp_get_available_congestion_control(char *buf, size_t len);
 void tcp_get_allowed_congestion_control(char *buf, size_t len);
 int tcp_set_allowed_congestion_control(char *allowed);
-int tcp_set_congestion_control(struct sock *sk, const char *name, bool load, bool reinit);
+int tcp_set_congestion_control(struct sock *sk, const char *name, bool load,
+			       bool reinit, bool cap_net_admin);
 u32 tcp_slow_start(struct tcp_sock *tp, u32 acked);
 void tcp_cong_avoid_ai(struct tcp_sock *tp, u32 w, u32 acked);
 
@@ -1512,6 +1513,16 @@ void tcp_select_initial_window(int __space, __u32 mss, __u32 *rcv_wnd,
 		, const struct sock *sk
 #endif
 		);
+
+#ifdef CONFIG_NETPM
+static inline int tcp_space_from_win(int win)
+{
+	return sysctl_tcp_adv_win_scale <= 0 ?
+			(win<<(-sysctl_tcp_adv_win_scale)) :
+			(win<<sysctl_tcp_adv_win_scale)/
+				((1<<sysctl_tcp_adv_win_scale)-1);
+}
+#endif
 
 static inline int tcp_win_from_space(int space)
 {
@@ -1883,6 +1894,27 @@ static inline void tcp_check_send_head(struct sock *sk, struct sk_buff *skb_unli
 	}
 	if (tcp_sk(sk)->highest_sack == skb_unlinked)
 		tcp_sk(sk)->highest_sack = NULL;
+}
+
+static inline struct sk_buff *tcp_rtx_queue_head(const struct sock *sk)
+{
+	struct sk_buff *skb = tcp_write_queue_head(sk);
+
+	if (skb == tcp_send_head(sk))
+		skb = NULL;
+
+	return skb;
+}
+
+static inline struct sk_buff *tcp_rtx_queue_tail(const struct sock *sk)
+{
+	struct sk_buff *skb = tcp_send_head(sk);
+
+	/* empty retransmit queue, for example due to zero window */
+	if (skb == tcp_write_queue_head(sk))
+		return NULL;
+
+	return skb ? tcp_write_queue_prev(sk, skb) : tcp_write_queue_tail(sk);
 }
 
 static inline void __tcp_add_write_queue_tail(struct sock *sk, struct sk_buff *skb)

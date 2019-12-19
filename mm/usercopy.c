@@ -149,7 +149,7 @@ static inline void check_page_span(const void *ptr, unsigned long n,
 #ifdef CONFIG_HARDENED_USERCOPY_PAGESPAN
 	const void *end = ptr + n - 1;
 	struct page *endpage;
-	bool is_reserved, is_cma_rbin;
+	bool is_reserved, is_cma;
 
 	/*
 	 * Sometimes the kernel data regions are not marked Reserved (see
@@ -190,8 +190,8 @@ static inline void check_page_span(const void *ptr, unsigned long n,
 	 * several independently allocated pages.
 	 */
 	is_reserved = PageReserved(page);
-	is_cma_rbin = is_migrate_cma_rbin_page(page);
-	if (!is_reserved && !is_cma_rbin)
+	is_cma = is_migrate_cma_page(page);
+	if (!is_reserved && !is_cma)
 		usercopy_abort("spans multiple pages", NULL, to_user, 0, n);
 
 	for (ptr += PAGE_SIZE; ptr <= end; ptr += PAGE_SIZE) {
@@ -199,7 +199,7 @@ static inline void check_page_span(const void *ptr, unsigned long n,
 		if (is_reserved && !PageReserved(page))
 			usercopy_abort("spans Reserved and non-Reserved pages",
 				       NULL, to_user, 0, n);
-		if (is_cma_rbin && !is_migrate_cma_rbin_page(page))
+		if (is_cma && !is_migrate_cma_page(page))
 			usercopy_abort("spans CMA and non-CMA pages", NULL,
 				       to_user, 0, n);
 	}

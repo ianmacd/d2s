@@ -508,7 +508,7 @@ packet_routed:
 no_route:
 	rcu_read_unlock();
 	IP_INC_STATS(net, IPSTATS_MIB_OUTNOROUTES);
-	IP_DUMP_STATS(skb, IPSTATS_MIB_OUTNOROUTES);
+	DROPDUMP_QUEUE_SKB(skb, NET_DROPDUMP_IPSTATS_MIB_OUTNOROUTES1);
 	kfree_skb(skb);
 	return -EHOSTUNREACH;
 }
@@ -519,6 +519,7 @@ static void ip_copy_metadata(struct sk_buff *to, struct sk_buff *from)
 	to->pkt_type = from->pkt_type;
 	to->priority = from->priority;
 	to->protocol = from->protocol;
+	to->skb_iif = from->skb_iif;
 	skb_dst_drop(to);
 	skb_dst_copy(to, from);
 	to->dev = from->dev;
@@ -552,7 +553,7 @@ static int ip_fragment(struct net *net, struct sock *sk, struct sk_buff *skb,
 		     (IPCB(skb)->frag_max_size &&
 		      IPCB(skb)->frag_max_size > mtu))) {
 		IP_INC_STATS(net, IPSTATS_MIB_FRAGFAILS);
-		IP_DUMP_STATS(skb, IPSTATS_MIB_FRAGFAILS);
+		DROPDUMP_QUEUE_SKB(skb, NET_DROPDUMP_IPSTATS_MIB_FRAGFAILS5);
 		icmp_send(skb, ICMP_DEST_UNREACH, ICMP_FRAG_NEEDED,
 			  htonl(mtu));
 		kfree_skb(skb);
@@ -693,7 +694,7 @@ int ip_do_fragment(struct net *net, struct sock *sk, struct sk_buff *skb,
 			return 0;
 		}
 
-		IP_DUMP_STATS(frag, IPSTATS_MIB_FRAGFAILS);
+		DROPDUMP_QUEUE_SKB(frag, NET_DROPDUMP_IPSTATS_MIB_FRAGFAILS6);
 
 		while (frag) {
 			skb = frag->next;
@@ -824,7 +825,7 @@ slow_path:
 	return err;
 
 fail:
-	IP_DUMP_STATS(skb, IPSTATS_MIB_FRAGFAILS);
+	DROPDUMP_QUEUE_SKB(skb, NET_DROPDUMP_IPSTATS_MIB_FRAGFAILS7);
 	kfree_skb(skb);
 	IP_INC_STATS(net, IPSTATS_MIB_FRAGFAILS);
 	return err;

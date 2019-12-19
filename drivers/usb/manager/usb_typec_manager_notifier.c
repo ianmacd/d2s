@@ -22,7 +22,7 @@
 #include <linux/fs.h>
 #include <linux/uaccess.h>
 #include <linux/workqueue.h>
-#include <linux/sec_sysfs.h>
+#include <linux/sec_class.h>
 #include <linux/sec_batt.h>
 
 #if defined(CONFIG_VBUS_NOTIFIER)
@@ -44,6 +44,10 @@
 #include "../../battery_v2/include/sec_charging_common.h"
 #else
 #include <linux/battery/sec_charging_common.h>
+#endif
+
+#if defined(CONFIG_SEC_ABC)
+#include <linux/sti/abc_common.h>
 #endif
 
 /* dwc3 irq storm patch */
@@ -758,6 +762,9 @@ static int manager_handle_ccic_notification(struct notifier_block *nb,
 				mutex_unlock(&typec_manager.mo_lock);
 #endif
 			}
+#if defined(CONFIG_SEC_ABC)
+			sec_abc_send_event("MODULE=pdic@ERROR=water_det");
+#endif
 		} else {
 			typec_manager.water_det = 0;
 			manager_event_work(p_noti.src, CCIC_NOTIFY_DEV_MUIC,

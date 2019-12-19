@@ -46,7 +46,6 @@
 #include <linux/string.h>
 #include <linux/list.h>
 #include <linux/ratelimit.h>
-#include <linux/android_aid.h>
 #include "multiuser.h"
 
 /* the file system name */
@@ -720,11 +719,6 @@ static inline bool str_n_case_eq(const char *s1, const char *s2, size_t len)
 static inline bool qstr_case_eq(const struct qstr *q1, const struct qstr *q2)
 {
 	return q1->len == q2->len && str_n_case_eq(q1->name, q2->name, q2->len);
-}
-
-static inline bool qstr_n_case_eq(const struct qstr *q1, const struct qstr *q2)
-{
-	return q1->len == q2->len && str_n_case_eq(q1->name, q2->name, q1->len);
 }
 
 #define QSTR_LITERAL(string) QSTR_INIT(string, sizeof(string)-1)

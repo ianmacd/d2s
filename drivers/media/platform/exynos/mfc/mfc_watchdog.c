@@ -222,8 +222,7 @@ static void __mfc_save_logging_sfr(struct mfc_dev *dev)
 		/* READ PAGE FAULT at AxID 0 ~ 3: PX */
 		if ((dev->logging_data->cause & (1 << MFC_CAUSE_0READ_PAGE_FAULT)) ||
 				(dev->logging_data->cause & (1 << MFC_CAUSE_1READ_PAGE_FAULT))) {
-			if (((dev->logging_data->fault_trans_info & 0xff) >= 0) &&
-					((dev->logging_data->fault_trans_info & 0xff) <= 3)) {
+			if ((dev->logging_data->fault_trans_info & 0xff) <= 3) {
 				px_fault = true;
 				for (i = 0; i < MFC_SFR_LOGGING_COUNT_SET2; i++)
 					dev->logging_data->SFRs_set2[i] = MFC_READL(mfc_logging_sfr_set2[i]);
@@ -265,7 +264,7 @@ static void __mfc_save_logging_sfr(struct mfc_dev *dev)
 	dev->logging_data->last_int_sec = dev->last_int_time.tv_sec;
 	dev->logging_data->last_int_usec = dev->last_int_time.tv_usec;
 	dev->logging_data->hwlock_dev = dev->hwlock.dev;
-	dev->logging_data->hwlock_ctx = dev->hwlock.bits;
+	dev->logging_data->hwlock_ctx = (u32)(dev->hwlock.bits);
 	dev->logging_data->num_inst = dev->num_inst;
 	dev->logging_data->num_drm_inst = dev->num_drm_inst;
 	dev->logging_data->power_cnt = mfc_pm_get_pwr_ref_cnt(dev);
@@ -336,11 +335,13 @@ static void __mfc_dump_state(struct mfc_dev *dev)
 	curr_ctx = __mfc_get_curr_ctx(dev);
 	for (i = 0; i < MFC_NUM_CONTEXTS; i++)
 		if (dev->ctx[i])
-			pr_err("MFC ctx[%d] %s(%scodec_type:%d) state:%d, queue_cnt(src:%d, dst:%d, ref:%d, qsrc:%d, qdst:%d), interrupt(cond:%d, type:%d, err:%d)\n",
+			pr_err("MFC ctx[%d] %s(%scodec_type:%d) %s, state:%d, queue_cnt(src:%d, dst:%d, ref:%d, qsrc:%d, qdst:%d), interrupt(cond:%d, type:%d, err:%d)\n",
 				dev->ctx[i]->num,
 				dev->ctx[i]->type == MFCINST_DECODER ? "DEC" : "ENC",
 				curr_ctx == i ? "curr_ctx! " : "",
-				dev->ctx[i]->codec_mode, dev->ctx[i]->state,
+				dev->ctx[i]->codec_mode,
+				dev->ctx[i]->is_drm ? "DRM" : "Normal",
+				dev->ctx[i]->state,
 				mfc_get_queue_count(&dev->ctx[i]->buf_queue_lock, &dev->ctx[i]->src_buf_queue),
 				mfc_get_queue_count(&dev->ctx[i]->buf_queue_lock, &dev->ctx[i]->dst_buf_queue),
 				mfc_get_queue_count(&dev->ctx[i]->buf_queue_lock, &dev->ctx[i]->ref_buf_queue),

@@ -17,17 +17,35 @@ config MST_LDO
 	help
 	This enables the MST LDO kernel driver
 
+config MST_SUPPORT_GPIO
+	bool "MST uses support gpio"
+	default n
+	help
+	This enables support gpio check code
+
 config MST_NONSECURE
 	bool "MST before TrustZone bringup"
 	default n
 	help
 	This enables the MST operation in Normal kernel
 
+config MST_IF_PMIC
+	bool "MST is used in IF PMIC"
+	default n
+	help
+	This enables the MST IF PMIC function
+
 config MFC_CHARGER
 	bool "MFC IC using model"
 	default n
 	help
 	This enables the MFC IC sysfs node
+
+config MFC_LDO_COMMAND
+	bool "I2C patch for LDO on MFC IC IDT chip"
+	default n
+	help
+	This enables the IDT patch for LDO on MFC IC IDT chip
 
 config MST_TEEGRIS
 	bool "MST running on TEEGRIS"

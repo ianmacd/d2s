@@ -2451,7 +2451,7 @@ static int mld_rx_int_poll(struct napi_struct *napi, int budget)
 #endif
 
 	if (total_ps_rcvd) {
-		mod_timer(&mld->cp_not_work, jiffies + 5 * 60 * HZ);
+		mod_timer(&mld->cp_not_work, jiffies + mld->not_work_time * HZ);
 	}
 
 	if (total_ps_rcvd < total_budget) {
@@ -3947,6 +3947,7 @@ struct link_device *pcie_create_link_device(struct platform_device *pdev)
 	mld->cp_not_work.expires = jiffies;
 	mld->cp_not_work.function = handle_cp_not_work;
 	mld->cp_not_work.data = (unsigned long)mld;
+	mld->not_work_time = 60; // init to 1 min
 
 	mif_err("---\n");
 	return ld;

@@ -620,18 +620,20 @@ static u64 mtp_offset_to_vregout(struct dimming_info *dim_info,
 
 	if (v == TP_VT) {
 		s32 offset = tp[v].center[c] + tp[v].offset[c];
-		if (offset > 0xF) {
-			pr_err("%s, error : ivt (%d) out of range(0x0 ~ 0xF)\n", __func__, offset);
-			return -EINVAL;
+		if ((offset > 0xF) || (offset < 0x0)) {
+			pr_warn("%s, warning : ivt (%d) out of range(0x0 ~ 0xF) replace to %s\n",
+				__func__, offset, offset > 0xF ? "0xF" : "0x0" );
+			offset = offset > 0xF ? 0xF : 0x0;
 		}
 		vreg = vsrc - VREF;
 		num = vreg * (s64)vt_voltage[offset];
 		res = vsrc - disp_div64(num, den);
 	} else if (v == TP_V0) {
 		s32 offset = tp[v].center[c] + tp[v].offset[c];
-		if (offset > 0xF) {
-			pr_err("%s, error : ivt (%d) out of range(0x0 ~ 0xF)\n", __func__, offset);
-			return -EINVAL;
+		if ((offset > 0xF) || (offset < 0x0)) {
+			pr_warn("%s, warning : ivt (%d) out of range(0x0 ~ 0xF) replace to %s\n",
+				__func__, offset, offset > 0xF ? "0xF" : "0x0" );
+			offset = offset > 0xF ? 0xF : 0x0;
 		}
 		vreg = vsrc - VREF;
 		num = vreg * (s64)v0_voltage[offset];
@@ -782,6 +784,37 @@ s64 interpolation(s64 from, s64 to, int cur_step, int total_step)
 	num = from + disp_div64(num, den);
 
 	return num;
+}
+
+int gamma_table_add_offset(s32 (*src)[MAX_COLOR], s32 (*ofs)[MAX_COLOR],
+		s32 (*out)[MAX_COLOR], struct tp *tp, int nr_tp)
+{
+	int v, c, upper, res;
+
+	if (unlikely(!tp || nr_tp == 0 || !src|| !ofs || !out)) {
+		pr_err("%s, invalid parameter (tp %d, nr_tp %d, src %d, ofs %d, out %d)\n",
+				__func__, !!tp, nr_tp, !!src, !!ofs, !!out);
+		return -EINVAL;
+	}
+
+	for (v = 0; v < nr_tp; v++) {
+		upper = (1 << tp[v].bits) - 1;
+		for_each_color(c) {
+			res = src[v][c] + ofs[v][c];
+			if (res < 0)
+				res = 0;
+			if (res > upper)
+				res = upper;
+
+			out[v][c] = res;
+#ifdef DEBUG_DIMMING
+			pr_info("%s, src %d, ofs %d, out %d\n",
+					__func__, src[v][c], ofs[v][c], out[v][c]);
+#endif
+		}
+	}
+
+	return 0;
 }
 
 int gamma_table_interpolation(s32 (*from)[MAX_COLOR], s32 (*to)[MAX_COLOR],

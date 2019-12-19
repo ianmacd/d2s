@@ -15,6 +15,7 @@
 #include <linux/slab.h>
 #include <linux/xattr.h>
 #include <linux/posix_acl.h>
+#include <linux/freezer.h>
 
 static bool fuse_use_readdirplus(struct inode *dir, struct dir_context *ctx)
 {
@@ -1470,7 +1471,7 @@ static int fuse_dir_open(struct inode *inode, struct file *file)
 
 static int fuse_dir_release(struct inode *inode, struct file *file)
 {
-	fuse_release_common(file, FUSE_RELEASEDIR);
+	fuse_release_common(file, true);
 
 	return 0;
 }
@@ -1574,7 +1575,7 @@ void fuse_set_nowrite(struct inode *inode)
 	BUG_ON(fi->writectr < 0);
 	fi->writectr += FUSE_NOWRITE;
 	spin_unlock(&fc->lock);
-	wait_event(fi->page_waitq, fi->writectr == FUSE_NOWRITE);
+	wait_event_freezable(fi->page_waitq, fi->writectr == FUSE_NOWRITE);
 }
 
 /*

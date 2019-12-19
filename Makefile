@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
 VERSION = 4
 PATCHLEVEL = 14
-SUBLEVEL = 85
+SUBLEVEL = 113
 EXTRAVERSION =
 NAME = Petit Gorille
 
@@ -313,7 +313,6 @@ SUBARCH := $(shell uname -m | sed -e s/i.86/x86/ -e s/x86_64/x86/ \
 #ARCH		?= $(SUBARCH)
 #CROSS_COMPILE	?= $(CONFIG_CROSS_COMPILE:"%"=%)
 ARCH            ?= arm64
-#CROSS_COMPILE   ?= ../PLATFORM/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin/aarch64-linux-android-
 CROSS_COMPILE	?= $(srctree)/toolchain/gcc-cfp/gcc-cfp-jopp-only/aarch64-linux-android-4.9/bin/aarch64-linux-android-
 
 # Architecture as present in compile.h
@@ -377,7 +376,7 @@ AS		= $(CROSS_COMPILE)as
 LD		= $(CROSS_COMPILE)ld
 LDGOLD		= $(CROSS_COMPILE)ld.gold
 #CC		= $(CROSS_COMPILE)gcc
-CC		= ../PLATFORM/prebuilts/clang/host/linux-x86/clang-4639204/bin/clang
+CC              = $(srctree)/toolchain/clang/host/linux-x86/clang-4639204-cfp-jopp/bin/clang
 CPP		= $(CC) -E
 AR		= $(CROSS_COMPILE)ar
 NM		= $(CROSS_COMPILE)nm
@@ -424,7 +423,7 @@ LINUXINCLUDE    := \
 		-I$(objtree)/include \
 		$(USERINCLUDE)
 
-KBUILD_AFLAGS   := -D__ASSEMBLY__
+KBUILD_AFLAGS   := -D__ASSEMBLY__ -march=armv8-a+lse
 KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common -fshort-wchar \
 		   -Werror-implicit-function-declaration \
@@ -513,20 +512,19 @@ endif
 ifeq ($(cc-name),clang)
 ifneq ($(CROSS_COMPILE),)
 #CLANG_TRIPLE	?= $(CROSS_COMPILE)
-CLANG_TRIPLE	?= ../PLATFORM/prebuilts/clang/host/linux-x86/clang-4639204/bin/aarch64-linux-gnu-
-CLANG_TARGET	:= --target=$(notdir $(CLANG_TRIPLE:%-=%))
-ifeq ($(shell $(srctree)/scripts/clang-android.sh $(CC) $(CLANG_TARGET)), y)
-$(error "Clang with Android --target detected. Did you specify CLANG_TRIPLE?")
-endif
-GCC_TOOLCHAIN	:= $(realpath $(dir $(shell which $(LD)))/..)
+CLANG_TRIPLE	?= $(srctree)/toolchain/clang/host/linux-x86/clang-4639204-cfp-jopp/bin/aarch64-linux-gnu-
+CLANG_FLAGS	:= --target=$(notdir $(CLANG_TRIPLE:%-=%))
+GCC_TOOLCHAIN_DIR := $(dir $(shell which $(CROSS_COMPILE)elfedit))
+CLANG_FLAGS	+= --prefix=$(GCC_TOOLCHAIN_DIR)
+GCC_TOOLCHAIN	:= $(realpath $(GCC_TOOLCHAIN_DIR)/..)
 endif
 ifneq ($(GCC_TOOLCHAIN),)
-CLANG_GCC_TC	:= --gcc-toolchain=$(GCC_TOOLCHAIN)
+CLANG_FLAGS	+= --gcc-toolchain=$(GCC_TOOLCHAIN)
 endif
-KBUILD_CFLAGS += $(CLANG_TARGET) $(CLANG_GCC_TC) $(CLANG_PREFIX)
-KBUILD_AFLAGS += $(CLANG_TARGET) $(CLANG_GCC_TC) $(CLANG_PREFIX)
-KBUILD_CFLAGS += $(call cc-option, -no-integrated-as)
-KBUILD_AFLAGS += $(call cc-option, -no-integrated-as)
+CLANG_FLAGS	+= -no-integrated-as
+KBUILD_CFLAGS	+= $(CLANG_FLAGS)
+KBUILD_AFLAGS	+= $(CLANG_FLAGS)
+export CLANG_FLAGS
 endif
 
 RETPOLINE_CFLAGS_GCC := -mindirect-branch=thunk-extern -mindirect-branch-register
@@ -908,6 +906,9 @@ KBUILD_CFLAGS += $(call cc-option,-Wdeclaration-after-statement,)
 # disable pointer signed / unsigned warnings in gcc 4.0
 KBUILD_CFLAGS += $(call cc-disable-warning, pointer-sign)
 
+# disable stringop warnings in gcc 8+
+KBUILD_CFLAGS += $(call cc-disable-warning, stringop-truncation)
+
 # disable invalid "can't wrap" optimizations for signed / pointers
 KBUILD_CFLAGS	+= $(call cc-option,-fno-strict-overflow)
 
@@ -968,9 +969,18 @@ ifeq ($(CONFIG_STRIP_ASM_SYMS),y)
 LDFLAGS_vmlinux	+= $(call ld-option, -X,)
 endif
 
-ifneq ($(SEC_BUILD_CONF_USE_FINGERPRINT_TZ), false)
+USE_SECGETSPF := $(shell echo $(PATH))
+ifneq ($(findstring buildscript/build_common/core/bin, $(USE_SECGETSPF)),)
+  ifneq ($(shell secgetspf SEC_PRODUCT_FEATURE_BIOAUTH_CONFIG_FINGERPRINT_TZ), false)
+    ifeq ($(CONFIG_SENSORS_FINGERPRINT), y)
+      ifneq ($(SEC_FACTORY_BUILD), true)
+        export KBUILD_FP_SENSOR_CFLAGS := -DENABLE_SENSORS_FPRINT_SECURE
+      endif
+    endif
+  endif
+else
   ifeq ($(CONFIG_SENSORS_FINGERPRINT), y)
-    ifneq ($(CONFIG_SEC_FACTORY), y)
+    ifneq ($(SEC_FACTORY_BUILD), true)
       export KBUILD_FP_SENSOR_CFLAGS := -DENABLE_SENSORS_FPRINT_SECURE
     endif
   endif
@@ -1064,11 +1074,6 @@ ifdef CONFIG_STACK_VALIDATION
   ifeq ($(has_libelf),1)
     objtool_target := tools/objtool FORCE
   else
-    ifdef CONFIG_UNWINDER_ORC
-      $(error "Cannot generate ORC metadata for CONFIG_UNWINDER_ORC=y, please install libelf-dev, libelf-devel or elfutils-libelf-devel")
-    else
-      $(warning "Cannot use CONFIG_STACK_VALIDATION=y, please install libelf-dev, libelf-devel or elfutils-libelf-devel")
-    endif
     SKIP_STACK_VALIDATION := 1
     export SKIP_STACK_VALIDATION
   endif
@@ -1212,6 +1217,14 @@ uapi-asm-generic:
 
 PHONY += prepare-objtool
 prepare-objtool: $(objtool_target)
+ifeq ($(SKIP_STACK_VALIDATION),1)
+ifdef CONFIG_UNWINDER_ORC
+	@echo "error: Cannot generate ORC metadata for CONFIG_UNWINDER_ORC=y, please install libelf-dev, libelf-devel or elfutils-libelf-devel" >&2
+	@false
+else
+	@echo "warning: Cannot use CONFIG_STACK_VALIDATION=y, please install libelf-dev, libelf-devel or elfutils-libelf-devel" >&2
+endif
+endif
 
 # Check for CONFIG flags that require compiler support. Abort the build
 # after .config has been processed, but before the kernel build starts.

@@ -159,9 +159,6 @@ static DEFINE_SPINLOCK(ptype_lock);
 static DEFINE_SPINLOCK(offload_lock);
 struct list_head ptype_base[PTYPE_HASH_SIZE] __read_mostly;
 struct list_head ptype_all __read_mostly;	/* Taps */
-#ifdef CONFIG_NET_SUPPORT_DROPDUMP
-struct list_head ptype_log __read_mostly;
-#endif
 static struct list_head offload_base __read_mostly;
 
 static int netif_rx_internal(struct sk_buff *skb);
@@ -387,11 +384,11 @@ static inline void netdev_set_addr_lockdep_class(struct net_device *dev)
 
 static inline struct list_head *ptype_head(const struct packet_type *pt)
 {
-#ifdef CONFIG_NET_SUPPORT_DROPDUMP
-	if (unlikely(pt->type == htons(ETH_P_LOG)))
-		return &ptype_log;
-	else
-#endif
+	struct list_head *ret = dropdump_ptype_head(pt);
+
+	if (unlikely(ret))
+		return ret;
+
 	if (pt->type == htons(ETH_P_ALL))
 		return pt->dev ? &pt->dev->ptype_all : &ptype_all;
 	else
@@ -1920,170 +1917,6 @@ static inline bool skb_loop_sk(struct packet_type *ptype, struct sk_buff *skb)
 
 	return false;
 }
-
-#ifdef CONFIG_NET_SUPPORT_DROPDUMP
-static void dev_queue_print_pkt(struct sk_buff *skb)
-{
-	struct iphdr *ip4hdr = (struct iphdr *)skb_network_header(skb);
-
-	if (ip4hdr->version == 4) {
-		pr_info("dqn: ip: src:%pI4, dst:%pI4, raw:%*ph\n",
-				&ip4hdr->saddr, &ip4hdr->daddr, 48, ip4hdr);
-	} else if (ip4hdr->version == 6) {
-		struct ipv6hdr *ip6hdr = (struct ipv6hdr *)ip4hdr;
-		pr_info("dqn: ip: src:%pI6, dst:%pI6, raw:%*ph\n",
-				&ip6hdr->saddr, &ip6hdr->daddr, 48, ip6hdr);
-	}
-}
-
-void dev_queue_nit(struct sk_buff *skb, u8 pkt_type, u16 drop_type)
-{
-	struct packet_type *ptype;
-	struct packet_type *pt_prev = NULL;
-	struct sk_buff *skb2 = NULL;
-	struct list_head *ptype_list = &ptype_log;
-	struct net_device *dev = NULL;
-	struct net_device *old_dev = skb->dev;
-	struct iphdr *iphdr;
-
-	if (!skb)
-		return;
-
-	if (skb->dev)
-		dev = skb->dev;
-	else if (skb_dst(skb) && skb_dst(skb)->dev)
-		dev = skb_dst(skb)->dev;
-	else
-		dev = init_net.loopback_dev;
-
-	/* final check */
-	if (!dev)
-		return;
-
-	rcu_read_lock();
-	skb->dev = dev;
-
-	list_for_each_entry_rcu(ptype, ptype_list, list) {
-		if (pt_prev) {
-			deliver_skb(skb2, pt_prev, dev);
-			pt_prev = ptype;
-			continue;
-		}
-
-		/* need to clone skb, done only once */
-		skb2 = skb_clone(skb, GFP_ATOMIC);
-		if (!skb2)
-			goto out_unlock;
-
-		net_timestamp_set(skb2);
-
-		/* skb->nh should be correctly
-		 * set by sender, so that the second statement is
-		 * just protection against buggy protocols.
-		 */
-		skb_reset_mac_header(skb2);
-
-		if (skb_network_header(skb2) > skb_tail_pointer(skb2)) {
-			net_crit_ratelimited("protocol %04x is buggy, dev %s\n",
-					ntohs(skb2->protocol),
-					dev->name);
-			skb_reset_network_header(skb2);
-		}
-
-		if (pkt_type != PACKET_OUTGOING &&
-				skb2->data > skb_network_header(skb2)) {
-			if (skb->transport_header - skb->network_header > 0)
-				skb_push(skb2, skb_network_header_len(skb2));
-			else
-				skb_push(skb2, skb2->data - skb_network_header(skb2));
-		}
-
-		skb2->transport_header = skb2->network_header;
-		skb2->pkt_type = pkt_type; /*PACKET_OUTGOING*/
-		pt_prev = ptype;
-
-		iphdr = (struct iphdr *)skb_network_header(skb2);
-		if (iphdr->version == 4) {
-			iphdr->ttl = (u8)drop_type;
-		} else if (iphdr->version == 6) {
-			struct ipv6hdr *ip6hdr = (struct ipv6hdr *)iphdr;
-			ip6hdr->hop_limit = (u8)drop_type;
-		} else {
-			/* no IP packet */
-		}
-	}
-
-out_unlock:
-	if (pt_prev) {
-		if (!skb_orphan_frags_rx(skb2, GFP_ATOMIC))
-			pt_prev->func(skb2, skb->dev, pt_prev, skb->dev);
-		else
-			kfree_skb(skb2);
-	}
-
-	skb->dev = old_dev;
-	rcu_read_unlock();
-}
-EXPORT_SYMBOL_GPL(dev_queue_nit);
-
-void dev_queue_mib(struct sk_buff *skb, u8 proto, u8 drop_type)
-{
-	u16 drop_type_param = 0;
-
-	switch (proto){
-	case 0:	/* IP */
-		switch (drop_type) {
-		case IPSTATS_MIB_INHDRERRORS:
-		case IPSTATS_MIB_INTOOBIGERRORS:			
-		case IPSTATS_MIB_INNOROUTES:			
-		case IPSTATS_MIB_INADDRERRORS:
-		case IPSTATS_MIB_INUNKNOWNPROTOS:
-		case IPSTATS_MIB_INTRUNCATEDPKTS:
-		case IPSTATS_MIB_INDISCARDS:
-		case IPSTATS_MIB_CSUMERRORS:
-			dev_queue_print_pkt(skb);
-			dev_queue_nit(skb, PACKET_HOST,
-					(drop_type_param + drop_type) & 0xFF);
-			break;
-
-		case IPSTATS_MIB_OUTDISCARDS:
-		case IPSTATS_MIB_OUTNOROUTES:
-		case IPSTATS_MIB_FRAGFAILS:
-			dev_queue_print_pkt(skb);
-			dev_queue_nit(skb, PACKET_OUTGOING,
-					(drop_type_param + drop_type) & 0xFF);
-			break;
-		}
-		break;
-
-	case 1: /* ICMP */
-		drop_type_param = __IPSTATS_MIB_MAX;
-		break;
-
-	case 2: /* ICMPv6 */
-		drop_type_param = __IPSTATS_MIB_MAX + __ICMP_MIB_MAX;
-		break;
-
-	case 3: /* TCP */
-		drop_type_param = __IPSTATS_MIB_MAX + __ICMP_MIB_MAX + __ICMP6_MIB_MAX;
-
-		switch (drop_type) {
-		case TCP_MIB_INERRS:
-		case TCP_MIB_CSUMERRORS:
-			dev_queue_print_pkt(skb);
-			dev_queue_nit(skb, PACKET_HOST,
-					(drop_type_param + drop_type) & 0xFF);
-			break;
-		}
-		break;
-
-	case 4: /* UDP */
-		break;
-	}
-}
-EXPORT_SYMBOL_GPL(dev_queue_mib);
-
-#endif
 
 /*
  *	Support routine. Sends outgoing frames to any network
@@ -3755,11 +3588,6 @@ int dev_weight_tx_bias __read_mostly = 1;  /* bias for output_queue quota */
 int dev_rx_weight __read_mostly = 64;
 int dev_tx_weight __read_mostly = 64;
 
-#ifdef CONFIG_NET_SUPPORT_DROPDUMP
-int netdev_support_dropdump = 1;
-EXPORT_SYMBOL(netdev_support_dropdump);
-#endif
-
 /* Called with irq disabled */
 static inline void ____napi_schedule(struct softnet_data *sd,
 				     struct napi_struct *napi)
@@ -4084,6 +3912,8 @@ drop:
 	local_irq_restore(flags);
 
 	atomic_long_inc(&skb->dev->rx_dropped);
+
+	DROPDUMP_QPCAP_SKB(skb, NET_DROPDUMP_OPT_CORE_BACKLOGFAIL);
 	kfree_skb(skb);
 	return NET_RX_DROP;
 }
@@ -4212,6 +4042,9 @@ static int netif_rx_internal(struct sk_buff *skb)
 
 	trace_netif_rx(skb);
 
+#ifdef CONFIG_NET_SUPPORT_DROPDUMP
+	skb->dropmask = PACKET_IN;
+#endif
 	if (static_key_false(&generic_xdp_needed)) {
 		int ret;
 
@@ -4659,6 +4492,8 @@ drop:
 			atomic_long_inc(&skb->dev->rx_dropped);
 		else
 			atomic_long_inc(&skb->dev->rx_nohandler);
+
+		DROPDUMP_QPCAP_SKB(skb, NET_DROPDUMP_OPT_CORE_BACKLOGFAIL1);
 		kfree_skb(skb);
 		/* Jamal, now you will not able to escape explaining
 		 * me how you were going to use this. :-)
@@ -4739,6 +4574,9 @@ static int netif_receive_skb_internal(struct sk_buff *skb)
 
 	net_timestamp_check(netdev_tstamp_prequeue, skb);
 
+#ifdef CONFIG_NET_SUPPORT_DROPDUMP
+	skb->dropmask = PACKET_IN;
+#endif
 	if (skb_defer_rx_timestamp(skb))
 		return NET_RX_SUCCESS;
 
@@ -5250,7 +5088,6 @@ static struct sk_buff *napi_frags_skb(struct napi_struct *napi)
 	skb_reset_mac_header(skb);
 	skb_gro_reset_offset(skb);
 
-	eth = skb_gro_header_fast(skb, 0);
 	if (unlikely(skb_gro_header_hard(skb, hlen))) {
 		eth = skb_gro_header_slow(skb, hlen, 0);
 		if (unlikely(!eth)) {
@@ -5260,6 +5097,7 @@ static struct sk_buff *napi_frags_skb(struct napi_struct *napi)
 			return NULL;
 		}
 	} else {
+		eth = (const struct ethhdr *)skb->data;
 		gro_pull_from_frag0(skb, hlen);
 		NAPI_GRO_CB(skb)->frag0 += hlen;
 		NAPI_GRO_CB(skb)->frag0_len -= hlen;
@@ -5501,11 +5339,14 @@ bool napi_complete_done(struct napi_struct *n, int work_done)
 		if (work_done)
 			timeout = n->dev->gro_flush_timeout;
 
+		/* When the NAPI instance uses a timeout and keeps postponing
+		 * it, we need to bound somehow the time packets are kept in
+		 * the GRO layer
+		 */
+		napi_gro_flush(n, !!timeout);
 		if (timeout)
 			hrtimer_start(&n->timer, ns_to_ktime(timeout),
 				      HRTIMER_MODE_REL_PINNED);
-		else
-			napi_gro_flush(n, false);
 	}
 	if (unlikely(!list_empty(&n->poll_list))) {
 		/* If n->poll_list is not empty, we need to mask irqs */
@@ -7476,7 +7317,7 @@ static netdev_features_t netdev_sync_upper_features(struct net_device *lower,
 	netdev_features_t feature;
 	int feature_bit;
 
-	for_each_netdev_feature(&upper_disables, feature_bit) {
+	for_each_netdev_feature(upper_disables, feature_bit) {
 		feature = __NETIF_F_BIT(feature_bit);
 		if (!(upper->wanted_features & feature)
 		    && (features & feature)) {
@@ -7496,7 +7337,7 @@ static void netdev_sync_lower_features(struct net_device *upper,
 	netdev_features_t feature;
 	int feature_bit;
 
-	for_each_netdev_feature(&upper_disables, feature_bit) {
+	for_each_netdev_feature(upper_disables, feature_bit) {
 		feature = __NETIF_F_BIT(feature_bit);
 		if (!(features & feature) && (lower->features & feature)) {
 			netdev_dbg(upper, "Disabling feature %pNF on lower dev %s.\n",
@@ -7964,6 +7805,9 @@ int init_dummy_netdev(struct net_device *dev)
 	set_bit(__LINK_STATE_PRESENT, &dev->state);
 	set_bit(__LINK_STATE_START, &dev->state);
 
+	/* napi_busy_loop stats accounting wants this */
+	dev_net_set(dev, &init_net);
+
 	/* Note : We dont allocate pcpu_refcnt for dummy devices,
 	 * because users of this 'device' dont need to change
 	 * its refcount.
@@ -8062,7 +7906,7 @@ static void netdev_wait_allrefs(struct net_device *dev)
 
 		refcnt = netdev_refcnt_read(dev);
 
-		if (time_after(jiffies, warning_time + 10 * HZ)) {
+		if (refcnt && time_after(jiffies, warning_time + 10 * HZ)) {
 			pr_emerg("unregister_netdevice: waiting for %s to become free. Usage count = %d\n",
 				 dev->name, refcnt);
 			warning_time = jiffies;
@@ -8862,6 +8706,8 @@ static void __net_exit default_device_exit(struct net *net)
 
 		/* Push remaining network devices to init_net */
 		snprintf(fb_name, IFNAMSIZ, "dev%d", dev->ifindex);
+		if (__dev_get_by_name(&init_net, fb_name))
+			snprintf(fb_name, IFNAMSIZ, "dev%%d");
 		err = dev_change_net_namespace(dev, &init_net, fb_name);
 		if (err) {
 			pr_emerg("%s: failed to move %s to init_net: %d\n",
@@ -8963,9 +8809,6 @@ static int __init net_dev_init(void)
 	if (netdev_kobject_init())
 		goto out;
 
-#ifdef CONFIG_NET_SUPPORT_DROPDUMP
-	INIT_LIST_HEAD(&ptype_log);
-#endif
 	INIT_LIST_HEAD(&ptype_all);
 	for (i = 0; i < PTYPE_HASH_SIZE; i++)
 		INIT_LIST_HEAD(&ptype_base[i]);

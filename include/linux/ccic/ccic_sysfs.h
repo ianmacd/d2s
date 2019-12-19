@@ -32,7 +32,8 @@ extern const struct attribute_group ccic_sysfs_group;
 
 enum {
 	BUILT_IN = 0,
-	UMS,
+	UMS = 1,
+	SPU = 2,
 };
 
 enum ccic_sysfs_property {
@@ -72,6 +73,8 @@ typedef struct _ccic_sysfs_property_t {
 				 size_t size);
 	/* Decides whether userspace can change a specific property */
 	int (*property_is_writeable)(struct _ccic_data_t *pccic_data,
+				      enum ccic_sysfs_property prop);
+	int (*property_is_writeonly)(struct _ccic_data_t *pccic_data,
 				      enum ccic_sysfs_property prop);
 } ccic_sysfs_property_t, *pccic_sysfs_property_t;
 

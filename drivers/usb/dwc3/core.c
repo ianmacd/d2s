@@ -625,9 +625,8 @@ int dwc3_event_buffers_setup(struct dwc3 *dwc)
 	evt = dwc->ev_buf;
 	if (evt == NULL) {
 		dev_err(dwc->dev, "Event buffer is NULL!!!\n");
-		return -EFAULT;
+		return -ENOMEM;
 	}
-
 	evt->lpos = 0;
 	dwc3_writel(dwc->regs, DWC3_GEVNTADRLO(0),
 			lower_32_bits(evt->dma));
@@ -1804,7 +1803,6 @@ static int dwc3_resume_common(struct dwc3 *dwc)
 static int dwc3_suspend(struct device *dev)
 {
 	struct dwc3	*dwc = dev_get_drvdata(dev);
-	struct dwc3_otg	*dotg = dwc->dotg;
 	int		ret;
 
 	pr_info("[%s]\n", __func__);
@@ -1814,15 +1812,12 @@ static int dwc3_suspend(struct device *dev)
 
 	pinctrl_pm_select_sleep_state(dev);
 
-	dotg->dwc3_suspended = 1;
-
 	return 0;
 }
 
 static int dwc3_resume(struct device *dev)
 {
 	struct dwc3	*dwc = dev_get_drvdata(dev);
-	struct dwc3_otg	*dotg = dwc->dotg;
 	int		ret;
 
 	pr_info("[%s]\n", __func__);
@@ -1838,9 +1833,6 @@ static int dwc3_resume(struct device *dev)
 
 	/* Compensate usage count incremented during prepare */
 	pm_runtime_put_sync(dev);
-
-	dotg->dwc3_suspended = 0;
-	complete(&dotg->resume_cmpl);
 
 	return 0;
 }

@@ -4,7 +4,7 @@ How to build Module for Platform
 
 [Step to build]
 1. Get android open source.
-    : version info - Android 9.0
+    : version info - Android 10.0
     ( Download site : http://source.android.com )
 
 2. Copy module that you want to build - to original android open source
@@ -48,16 +48,19 @@ PRODUCT_PACKAGES += \
    To download the source code of S/W listed below, please visit http://opensource.samsung.com and find ¡°Mobile -> Mobile Application¡± menu, 
    and then, you will be able to download what you want. 
    You might save time in finding the right one by making use of the search keyword below. 
-   
-   - SamsungMessages_10.0.apk : "Messaging"
-   - SamsungConnect.apk : "SamsungConnect"
-   - Notes_Removable.apk : "Samsung Notes"
-   - SBrowser_9.0_Removable.apk : "SBrowser" (version : SBrowser v9)
-   - KidsHome_Installer.apk : "KidsHome"
-   - Fmm.apk : "FMM"   
-   - SecEmail_P.apk : "Email"
-   - SamsungCamera.apk : "Camera8"
-   - VoiceNote_5.0.apk : "Voice Recorder"
+
+   - SamsungMessages_11.apk : "Messaging"
    - MdecService : "MdecService"
-   - SmartSwitch.apk : "Smart Switch" (Version : 3.4)
-   - AREmoji.apk : "AREmoji"
+   - LightweightWebEngine.apk : "lightweight-web-engine"
+   - DeXonPC.apk : "DeXonPC"
+   - SBrowser_11.0_Removable.apk : "SBrowser" (version : SBrowser v11)    
+   - SamsungConnect.apk : "SamsungConnect"
+   - KidsHome_Installer.apk : "KidsHome"                  
+   - Notes32_Removable.apk : "Samsung Notes"
+   - SamsungCamera.apk : "Camera8"
+   - AREmoji.apk : "AREmoji"      
+   - SmartSwitch.apk : "Smart Switch" (Version : 3.4)            
+   - SecEmail_P.apk : "Email"
+   - VoiceNote_5.0.apk : "Voice Recorder"  
+   - Fmm.apk : "FMM"   
+   - BixbyVisionFramework3.apk: "BixbyVisionFramework"

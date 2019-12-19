@@ -82,6 +82,10 @@ enum fimc_is_rom_dualcal_index {
 	ROM_DUALCAL_NOTHING	= 100
 };
 
+#define TOF_CAL_SIZE_MAX 10
+#define TOF_CAL_UID_MAX 10
+#define TOF_CAL_VALID_MAX 10
+
 #ifdef USE_CAMERA_HW_BIG_DATA
 #define CAM_HW_ERR_CNT_FILE_PATH "/data/vendor/camera/camera_hw_err_cnt.dat"
 
@@ -146,7 +150,7 @@ int fimc_is_vender_sensor_gpio_off(struct fimc_is_vender *vender, u32 scenario, 
 void fimc_is_vender_check_retention(struct fimc_is_vender *vender, void *module_data);
 #endif
 void fimc_is_vender_itf_open(struct fimc_is_vender *vender, struct sensor_open_extended *ext_info);
-int fimc_is_vender_set_torch(u32 aeflashMode);
+int fimc_is_vender_set_torch(struct camera2_shot *shot);
 int fimc_is_vender_video_s_ctrl(struct v4l2_control *ctrl, void *device_data);
 int fimc_is_vender_ssx_video_s_ctrl(struct v4l2_control *ctrl, void *device_data);
 int fimc_is_vender_ssx_video_g_ctrl(struct v4l2_control *ctrl, void *device_data);

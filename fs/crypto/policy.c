@@ -303,7 +303,7 @@ int fscrypt_inherit_context(struct inode *parent, struct inode *child,
 #endif
 
 #ifdef CONFIG_DDAR
-	res = dd_test_and_inherit_context(&ctx, parent, child, ci);
+	res = dd_test_and_inherit_context(&ctx, parent, child, ci, fs_data);
 	if(res) {
 		dd_error("failed to inherit dd policy\n");
 		return res;
@@ -311,7 +311,7 @@ int fscrypt_inherit_context(struct inode *parent, struct inode *child,
 #endif
 
 #ifdef CONFIG_FSCRYPT_SDP
-	res = fscrypt_sdp_inherit_context(parent, child, &ctx);
+	res = fscrypt_sdp_inherit_context(parent, child, &ctx, fs_data);
 	if (res) {
 		printk_once(KERN_WARNING
 				"%s: Failed to set sensitive ongoing flag (err:%d)\n", __func__, res);

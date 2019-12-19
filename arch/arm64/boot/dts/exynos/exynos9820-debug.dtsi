@@ -18,11 +18,10 @@
 / {
 	debug-snapshot-soc {
 		compatible = "debug-snapshot-soc";
-		#address-cells = <1>;
-		#size-cells = <1>;
 		use_multistage_wdt_irq = <497>;
 		dump-info@0x0 {
-
+			#address-cells = <1>;
+			#size-cells = <1>;
 			sfr-dump-list = "sfr-dump-gic-setenable", "sfr-dump-gic-setpend", "sfr-dump-gic-setactive";
 
 			sfr-dump-gic-setenable {

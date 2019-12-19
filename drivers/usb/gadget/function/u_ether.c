@@ -429,7 +429,7 @@ static void rx_fill(struct eth_dev *dev, gfp_t gfp_flags)
 
 	/* fill unused rxq slots with some skb */
 	spin_lock_irqsave(&dev->req_lock, flags);
-	while(!list_empty(&dev->rx_reqs)) {
+	while (!list_empty(&dev->rx_reqs)) {
 		req = list_first_entry(&dev->rx_reqs, struct usb_request, list);
 		if(!dev->port_usb || (++req_cnt > qlen(dev->gadget, dev->qmult)))
 			break;
@@ -1436,7 +1436,7 @@ void gether_disconnect(struct gether *link)
 	spin_unlock(&dev->lock);
 
 	spin_lock(&dev->req_lock);
-	while(!list_empty(&dev->tx_reqs)) {
+	while (!list_empty(&dev->tx_reqs)) {
 		req = list_first_entry(&dev->tx_reqs, struct usb_request, list);
 		list_del(&req->list);
 
@@ -1451,7 +1451,7 @@ void gether_disconnect(struct gether *link)
 
 	usb_ep_disable(link->out_ep);
 	spin_lock(&dev->req_lock);
-	while(!list_empty(&dev->rx_reqs)) {
+	while (!list_empty(&dev->rx_reqs)) {
 		req = list_first_entry(&dev->rx_reqs, struct usb_request, list);
 		list_del(&req->list);
 

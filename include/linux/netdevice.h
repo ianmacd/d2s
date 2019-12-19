@@ -1356,6 +1356,7 @@ struct net_device_ops {
  * @IFF_PHONY_HEADROOM: the headroom value is controlled by an external
  *	entity (i.e. the master device for bridged veth)
  * @IFF_MACSEC: device is a MACsec device
+ * @IFF_L3MDEV_RX_HANDLER: only invoke the rx handler of L3 master device
  */
 enum netdev_priv_flags {
 	IFF_802_1Q_VLAN			= 1<<0,
@@ -1386,6 +1387,7 @@ enum netdev_priv_flags {
 	IFF_RXFH_CONFIGURED		= 1<<25,
 	IFF_PHONY_HEADROOM		= 1<<26,
 	IFF_MACSEC			= 1<<27,
+	IFF_L3MDEV_RX_HANDLER		= 1<<28,
 };
 
 #define IFF_802_1Q_VLAN			IFF_802_1Q_VLAN
@@ -1415,6 +1417,7 @@ enum netdev_priv_flags {
 #define IFF_TEAM			IFF_TEAM
 #define IFF_RXFH_CONFIGURED		IFF_RXFH_CONFIGURED
 #define IFF_MACSEC			IFF_MACSEC
+#define IFF_L3MDEV_RX_HANDLER		IFF_L3MDEV_RX_HANDLER
 
 /**
  *	struct net_device - The DEVICE structure.
@@ -1898,6 +1901,9 @@ struct net_device {
 	struct lock_class_key	*qdisc_tx_busylock;
 	struct lock_class_key	*qdisc_running_key;
 	bool			proto_down;
+#ifdef CONFIG_NETPM
+	bool netpm_use;
+#endif
 };
 #define to_net_dev(d) container_of(d, struct net_device, dev)
 
@@ -3350,13 +3356,6 @@ static __always_inline int ____dev_forward_skb(struct net_device *dev,
 	return 0;
 }
 
-#ifdef CONFIG_NET_SUPPORT_DROPDUMP
-void dev_queue_nit(struct sk_buff *skb, u8 pkt_type, u16 drop_type);
-void dev_queue_mib(struct sk_buff *skb, u8 proto, u8 drop_type);
-#else
-static inline void dev_queue_nit(struct sk_buff *skb, u8 pkt_type, u16 drop_type) {}
-static inline void dev_queue_mib(struct sk_buff *skb, u8 proto, u8 drop_type) {}
-#endif
 
 void dev_queue_xmit_nit(struct sk_buff *skb, struct net_device *dev);
 
@@ -4233,6 +4232,11 @@ static inline bool netif_supports_nofcs(struct net_device *dev)
 	return dev->priv_flags & IFF_SUPP_NOFCS;
 }
 
+static inline bool netif_has_l3_rx_handler(const struct net_device *dev)
+{
+	return dev->priv_flags & IFF_L3MDEV_RX_HANDLER;
+}
+
 static inline bool netif_is_l3_master(const struct net_device *dev)
 {
 	return dev->priv_flags & IFF_L3MDEV_MASTER;
@@ -4488,5 +4492,7 @@ do {								\
  */
 #define PTYPE_HASH_SIZE	(16)
 #define PTYPE_HASH_MASK	(PTYPE_HASH_SIZE - 1)
+
+#include <uapi/linux/net_dropdump.h>
 
 #endif	/* _LINUX_NETDEVICE_H */

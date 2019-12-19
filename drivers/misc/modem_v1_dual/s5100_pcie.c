@@ -213,6 +213,7 @@ void save_s5100_status()
 	else
 		mif_err("MSI-DBG:AFTER: s5100pcie.pci_saved_configs is NOT NULL\n");
 	*/
+
 	/* check the BAR values saved */
 	pci_read_config_dword(s5100pcie.s5100_pdev, 0x10, &val);
 	mif_info("Saved BAR(0x10) : 0x%x\n", val);

@@ -26,6 +26,8 @@
 #include <linux/mfd/syscon/exynos5-pmu.h>
 #include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
+#include <linux/regulator/driver.h>
+#include "../../regulator/internal.h"
 #include <linux/usb/samsung_usb.h>
 #include <linux/usb/otg.h>
 #if IS_ENABLED(CONFIG_EXYNOS_OTP)
@@ -38,6 +40,8 @@
 
 #include "phy-exynos-usbdrd.h"
 #include "phy-exynos-debug.h"
+
+#include <soc/samsung/exynos-cpupm.h>
 
 static void __iomem *usbdp_combo_phy_reg;
 
@@ -800,7 +804,7 @@ static int exynos_usbdrd_fill_hstune_param(struct exynos_usbdrd_phy *phy_drd,
 
 	dev_info(dev, "%s hs tune cnt = %d\n", __func__, res[0]);
 
-	hs_tune_param = devm_kzalloc(dev, size*(res[0]+1), GFP_KERNEL);
+	hs_tune_param = devm_kzalloc(dev, size * (res[0] + 1), GFP_KERNEL);
 	if (!hs_tune_param)
 		return -ENOMEM;
 	phy_drd->usbphy_info.tune_param = hs_tune_param;
@@ -849,7 +853,7 @@ static int exynos_usbdrd_fill_sstune_param(struct exynos_usbdrd_phy *phy_drd,
 
 	dev_info(dev, "%s ss tune cnt = %d\n", __func__, res[0]);
 
-	ss_tune_param = devm_kzalloc(dev, size*(res[0]+1), GFP_KERNEL);
+	ss_tune_param = devm_kzalloc(dev, size * (res[0] + 1), GFP_KERNEL);
 	if (!ss_tune_param)
 		return -ENOMEM;
 	phy_drd->usbphy_sub_info.tune_param = ss_tune_param;
@@ -1329,11 +1333,15 @@ static int exynos_usbdrd_utmi_vendor_set(struct exynos_usbdrd_phy *phy_drd,
 
 	dev_info(phy_drd->dev, "rewa irq : %d, enable: %d, cancel: %d\n",
 			phy_drd->is_irq_enabled, is_enable, is_cancel);
+
 	if (is_cancel) {
 		if (is_enable) {
 			if (phy_drd->is_irq_enabled == 1) {
 				dev_info(phy_drd->dev, "[%s] REWA CANCEL\n", __func__);
 				phy_exynos_usb3p1_rewa_cancel(&phy_drd->usbphy_info);
+
+				/* inform what USB state is not idle to IDLE_IP */
+				exynos_update_ip_idle_status(phy_drd->idle_ip_idx, 0);
 
 				dev_info(phy_drd->dev, "REWA wakeup/conn IRQ disable\n");
 
@@ -1351,6 +1359,10 @@ static int exynos_usbdrd_utmi_vendor_set(struct exynos_usbdrd_phy *phy_drd,
 				dev_err(phy_drd->dev, "REWA ENABLE FAIL, ret : %d \n", ret);
 				return ret;
 			}
+
+			/* inform what USB state is idle to IDLE_IP */
+			exynos_update_ip_idle_status(phy_drd->idle_ip_idx, 1);
+
 			dev_info(phy_drd->dev, "REWA ENABLE Complete\n");
 
 			if (phy_drd->is_irq_enabled == 0) {
@@ -1362,6 +1374,10 @@ static int exynos_usbdrd_utmi_vendor_set(struct exynos_usbdrd_phy *phy_drd,
 			}
 		} else {
 			dev_info(phy_drd->dev, "REWA Disconn & Wakeup IRQ DISABLE\n");
+
+			/* inform what USB state is not idle to IDLE_IP */
+			exynos_update_ip_idle_status(phy_drd->idle_ip_idx, 0);
+
 			ret = phy_exynos_usb3p1_rewa_disable(&phy_drd->usbphy_info);
 			if (ret) {
 				dev_err(phy_drd->dev, "REWA DISABLE FAIL, ret : %d \n", ret);
@@ -1442,29 +1458,31 @@ static int exynos_usbdrd_phy_tune(struct phy *phy, int phy_state)
 
 void exynos_usbdrd_ldo_control(struct exynos_usbdrd_phy *phy_drd, int on)
 {
+	struct regulator *r_ldo10, *r_ldo11, *r_ldo12;	
 	int ret1 = 0;
 	int ret2 = 0;
 	int ret3 = 0;
 
 	dev_info(phy_drd->dev, "Turn %s LDO\n", on ? "on" : "off");
 
+	r_ldo10 = phy_drd->ldo10;
+	r_ldo11 = phy_drd->ldo11;
+	r_ldo12 = phy_drd->ldo12;
+
 	if (on) {
-		if (!regulator_is_enabled(phy_drd->ldo10))
-			ret1 = regulator_enable(phy_drd->ldo10);
-		if (!regulator_is_enabled(phy_drd->ldo11))
-			ret2 = regulator_enable(phy_drd->ldo11);
-		if (!regulator_is_enabled(phy_drd->ldo12))
-			ret3 = regulator_enable(phy_drd->ldo12);
+		ret1 = regulator_enable(r_ldo10);
+		ret2 = regulator_enable(r_ldo11);
+		ret3 = regulator_enable(r_ldo12);
 		if (ret1 || ret2 || ret3) {
 			dev_err(phy_drd->dev, "Failed to enable USB LDOs: %d %d %d\n",
 				ret1, ret2, ret3);
 		}
 	} else {
-		if (regulator_is_enabled(phy_drd->ldo10))
+		if (r_ldo10->rdev->use_count > 0)
 			ret1 = regulator_disable(phy_drd->ldo10);
-		if (regulator_is_enabled(phy_drd->ldo11))
+		if (r_ldo11->rdev->use_count > 0)
 			ret2 = regulator_disable(phy_drd->ldo11);
-		if (regulator_is_enabled(phy_drd->ldo12))
+		if (r_ldo12->rdev->use_count > 0)
 			ret3 = regulator_disable(phy_drd->ldo12);
 		if (ret1 || ret2 || ret3) {
 			dev_err(phy_drd->dev, "Failed to disable USB LDOs: %d %d %d\n",
@@ -1628,6 +1646,32 @@ static struct exynos_usbdrd_phy *exynos_usbdrd_get_struct(void)
 
 	pr_err("%s: failed to get the platform_device\n", __func__);
 	return NULL;
+}
+
+static int exynos_usbdrd_get_idle_ip(void)
+{
+	struct device_node *np = NULL;
+	struct platform_device *pdev = NULL;
+	struct device *dev;
+	int idle_ip_idx;
+
+	np = of_find_compatible_node(NULL, NULL, "samsung,exynos-dwusb");
+	if (np) {
+		pdev = of_find_device_by_node(np);
+		dev = &pdev->dev;
+		of_node_put(np);
+		if (pdev) {
+			pr_info("%s: get the %s platform_device\n",
+				__func__, pdev->name);
+
+			idle_ip_idx = exynos_get_idle_ip_index(dev_name(dev));
+			pr_info("%s, idle ip = %d\n", __func__, idle_ip_idx);
+			return idle_ip_idx;
+		}
+	}
+
+	pr_err("%s: failed to get the platform_device\n", __func__);
+	return -1;
 }
 
 static int exynos_usbdrd_phy_power_off(struct phy *phy)
@@ -1968,6 +2012,10 @@ static int exynos_usbdrd_phy_probe(struct platform_device *pdev)
 		goto err1;
 	}
 #endif
+
+	phy_drd->idle_ip_idx = exynos_usbdrd_get_idle_ip();
+	if (phy_drd->idle_ip_idx < 0)
+		dev_err(dev, "Failed to get idle ip index\n");
 
 	phy_provider = devm_of_phy_provider_register(dev,
 						     exynos_usbdrd_phy_xlate);

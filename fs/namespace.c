@@ -41,6 +41,9 @@
 
 #define KDP_MOUNT_VENDOR "/vendor"
 #define KDP_MOUNT_VENDOR_LEN strlen(KDP_MOUNT_VENDOR)
+
+#define KDP_MOUNT_ART "/com.android.runtime"
+#define KDP_MOUNT_ART_LEN strlen(KDP_MOUNT_ART)
 #endif /*CONFIG_RKP_NS_PROT */
 
 /* Maximum number of mounts in a mount namespace */
@@ -90,6 +93,7 @@ static struct kmem_cache *mnt_cache __read_mostly;
 struct super_block *sys_sb __kdp_ro = NULL;
 struct super_block *odm_sb __kdp_ro = NULL;
 struct super_block *vendor_sb __kdp_ro = NULL;
+struct super_block *art_sb __kdp_ro = NULL;
 struct super_block *rootfs_sb __kdp_ro = NULL;
 static struct kmem_cache *vfsmnt_cache __read_mostly;
 /* Populate all superblocks required for NS Protection */
@@ -99,6 +103,7 @@ enum kdp_sb {
 	KDP_SB_ODM,
 	KDP_SB_SYS,
 	KDP_SB_VENDOR,
+	KDP_SB_ART,
 	KDP_SB_MAX
 };
 #endif /*CONFIG_RKP_NS_PROT */
@@ -108,6 +113,10 @@ static DECLARE_RWSEM(namespace_sem);
 /* /sys/fs */
 struct kobject *fs_kobj;
 EXPORT_SYMBOL_GPL(fs_kobj);
+
+/* /sys/fs/iostat */
+struct kobject *fs_iostat_kobj;
+EXPORT_SYMBOL(fs_iostat_kobj);
 
 /*
  * vfsmount lock may be taken for read to prevent changes to the
@@ -136,11 +145,28 @@ enum {
 };
 
 static const char *umount_exit_str[UMOUNT_STATUS_MAX] = {
-	"ADDED_TASK", "REMAIN_NS", "REMAIN_CNT", "DELAY_TASK"};
+	"ADDED_TASK", "REMAIN_NS", "REMAIN_CNT", "DELAY_TASK"
+};
+
+static const char *exception_process[] = {
+	"main", "usap32", "usap64", NULL,
+};
 
 static inline void sys_umount_trace_set_status(unsigned int status)
 {
 	sys_umount_trace_status = status;
+}
+
+static inline int is_exception(char *comm)
+{
+	unsigned int idx = 0;
+
+	do {
+		if (!strcmp(comm, exception_process[idx]))
+			return 1;
+	} while (exception_process[++idx]);
+
+	return 0;
 }
 
 static inline void sys_umount_trace_print(struct mount *mnt, int flags)
@@ -155,7 +181,7 @@ static inline void sys_umount_trace_print(struct mount *mnt, int flags)
 	/* We don`t want to see what zygote`s umount */
 	if (((sb->s_magic == SDFAT_SUPER_MAGIC) ||
 		(sb->s_magic == MSDOS_SUPER_MAGIC)) &&
-		((current_uid().val == 0) && (strcmp(current->comm, "main")))) {
+		((current_uid().val == 0) && !is_exception(current->comm))) {
 		struct block_device *bdev = sb->s_bdev;
 		dev_t bd_dev = bdev ? bdev->bd_dev : 0;
 
@@ -2086,6 +2112,10 @@ static inline bool may_mandlock(void)
  * unixes. Our API is identical to OSF/1 to avoid making a mess of AMD
  */
 
+#ifdef CONFIG_PAGE_BOOST_RECORDING
+#include <linux/io_record.h>
+#endif
+
 SYSCALL_DEFINE2(umount, char __user *, name, int, flags)
 {
 	struct path path;
@@ -2099,6 +2129,9 @@ SYSCALL_DEFINE2(umount, char __user *, name, int, flags)
 	if (!may_mount())
 		return -EPERM;
 
+#ifdef CONFIG_PAGE_BOOST_RECORDING
+	forced_init_record();
+#endif
 	if (!(flags & UMOUNT_NOFOLLOW))
 		lookup_flags |= LOOKUP_FOLLOW;
 
@@ -3019,6 +3052,9 @@ static void rkp_populate_sb(char *mount_point, struct vfsmount *mnt)
 	} else if (!vendor_sb &&
 		!strncmp(mount_point, KDP_MOUNT_VENDOR, KDP_MOUNT_VENDOR_LEN)) {
 		uh_call(UH_APP_RKP, RKP_KDP_X56, (u64)&vendor_sb, (u64)mnt, KDP_SB_VENDOR, 0);
+	} else if (!art_sb &&
+		!strncmp(mount_point, KDP_MOUNT_ART, KDP_MOUNT_ART_LEN-1)) {
+		uh_call(UH_APP_RKP, RKP_KDP_X56, (u64)&art_sb, (u64)mnt, KDP_SB_ART, 0);
 	}
 }
 #endif /*CONFIG_RKP_NS_PROT*/
@@ -3069,8 +3105,7 @@ static int do_new_mount(struct path *path, const char *fstype, int sb_flags,
 		return -ENOMEM;
 	}
 	dir_name = dentry_path_raw(path->dentry, buf, PATH_MAX);
-
-	if(!sys_sb || !odm_sb || !vendor_sb) 
+	if(!sys_sb || !odm_sb || !vendor_sb || !art_sb) 
 		rkp_populate_sb(dir_name, mnt);
 	kfree(buf);
 #endif
@@ -3896,6 +3931,14 @@ void __init mnt_init(void)
 	fs_kobj = kobject_create_and_add("fs", NULL);
 	if (!fs_kobj)
 		printk(KERN_WARNING "%s: kobj create error\n", __func__);
+
+	if(fs_kobj) {
+		fs_iostat_kobj = kobject_create_and_add("fsio", fs_kobj);
+		if(!fs_iostat_kobj)
+			printk(KERN_WARNING "%s: iostat kobj create error\n",
+					__func__);
+	}
+
 	init_rootfs();
 	init_mount_tree();
 }

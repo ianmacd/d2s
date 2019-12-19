@@ -995,8 +995,14 @@ out:
 static ssize_t uevent_store(struct device *dev, struct device_attribute *attr,
 			    const char *buf, size_t count)
 {
-	if (kobject_synth_uevent(&dev->kobj, buf, count))
+	int rc;
+
+	rc = kobject_synth_uevent(&dev->kobj, buf, count);
+
+	if (rc) {
 		dev_err(dev, "uevent: failed to send synthetic uevent\n");
+		return rc;
+	}
 
 	return count;
 }
@@ -1575,6 +1581,8 @@ static void cleanup_glue_dir(struct device *dev, struct kobject *glue_dir)
 		return;
 
 	mutex_lock(&gdp_mutex);
+	if (!kobject_has_children(glue_dir))
+		kobject_del(glue_dir);
 	kobject_put(glue_dir);
 	mutex_unlock(&gdp_mutex);
 }
@@ -2840,6 +2848,7 @@ void device_shutdown(void)
 		dev = list_entry(devices_kset->list.prev, struct device,
 				kobj.entry);
 
+		sec_debug_set_shutdown_device(__func__, dev_name(dev));
 		/*
 		 * hold reference count of device's parent to
 		 * prevent it from being freed because parent's
@@ -2901,6 +2910,7 @@ void device_shutdown(void)
 		spin_lock(&devices_kset->list_lock);
 	}
 
+	sec_debug_set_shutdown_device(NULL, NULL);
 	sec_debug_set_task_in_dev_shutdown(0);
 	spin_unlock(&devices_kset->list_lock);
 }

@@ -117,6 +117,7 @@ struct gadget_info {
 	struct work_struct work;
 	struct device *dev;
 	struct list_head linked_func;
+	bool	gsi_boot;
 #endif
 };
 
@@ -216,6 +217,8 @@ static int set_alt_serialnumber(struct gadget_strings *gs)
 {
 	char *str;
 	int ret = -ENOMEM;
+
+	pr_info("%s\n", __func__);
 
 	str = kmalloc(CHIPID_SIZE + 1, GFP_KERNEL);
 	if (!str) {
@@ -364,6 +367,12 @@ static ssize_t gadget_dev_desc_UDC_store(struct config_item *item,
 	struct gadget_info *gi = to_gadget_info(item);
 	char *name;
 	int ret;
+#ifdef CONFIG_USB_CONFIGFS_UEVENT
+	struct usb_composite_dev *cdev;
+	struct usb_configuration *c;
+	struct config_usb_cfg *cfg;
+	struct usb_function *f, *tmp;
+#endif
 
 	pr_info("%s: +++\n", __func__);
 	mdelay(50);
@@ -380,6 +389,14 @@ static ssize_t gadget_dev_desc_UDC_store(struct config_item *item,
 	if (name[len - 1] == '\n')
 		name[len - 1] = '\0';
 
+#ifdef CONFIG_USB_CONFIGFS_UEVENT
+	cdev = &gi->cdev;
+	if (!cdev) {
+		printk("usb: %s : cdev is null, name = %s \n",__func__, name);
+		return -ENODEV;
+	}
+#endif
+
 	mutex_lock(&gi->lock);
 
 	if (!strlen(name) || strcmp(name, "none") == 0) {
@@ -387,6 +404,21 @@ static ssize_t gadget_dev_desc_UDC_store(struct config_item *item,
 		if (ret)
 			goto err;
 		kfree(name);
+#ifdef CONFIG_USB_CONFIGFS_UEVENT
+		if (gi->gsi_boot) {
+			printk("usb: %s: GSI_image : Clear cfg->func_list \n",__func__);
+			if ( cdev != NULL ) {
+				list_for_each_entry(c, &cdev->configs, list) {
+					cfg = container_of(c, struct config_usb_cfg, c);
+					list_for_each_entry_safe(f, tmp, &cfg->func_list, list) {
+						list_move_tail(&f->list, &gi->linked_func);
+					}
+					c->next_interface_id = 0;
+				//	memset(c->interface, 0, sizeof(c->interface));
+				}
+			}
+		}
+#endif
 	} else {
 		if (gi->composite.gadget_driver.udc_name) {
 			ret = -EBUSY;
@@ -398,10 +430,17 @@ static ssize_t gadget_dev_desc_UDC_store(struct config_item *item,
 			gi->composite.gadget_driver.udc_name = NULL;
 			goto err;
 		}
+#ifdef CONFIG_USB_CONFIGFS_UEVENT
+		if (gi->gsi_boot) {
+			printk("usb: %s : gi->gsi_boot = %d \n",__func__,gi->gsi_boot);
+			usb_gadget_connect(gi->cdev.gadget);
+		}
+#endif
 	}
 	mutex_unlock(&gi->lock);
 	return len;
 err:
+	pr_info("%s: err return ---\n", __func__);
 	kfree(name);
 	mutex_unlock(&gi->lock);
 	return ret;
@@ -494,6 +533,12 @@ static int config_usb_cfg_link(
 	char *src;
 	struct gadget_strings *gs;
 #endif
+
+#ifdef CONFIG_USB_CONFIGFS_UEVENT
+	struct usb_configuration	*c;
+	struct usb_function *tmp;
+	struct gadget_config_name *cn;
+#endif
 	int ret;
 
 	mutex_lock(&gi->lock);
@@ -513,6 +558,29 @@ static int config_usb_cfg_link(
 
 	list_for_each_entry(f, &cfg->func_list, list) {
 		if (f->fi == fi) {
+#ifdef CONFIG_USB_CONFIGFS_UEVENT
+			printk("usb: %s : usb function instance already exist (GSI) ~ \n",__func__);
+			gi->gsi_boot=1;
+			if (!list_empty(&cfg->string_list)) {
+				i = 0;
+				list_for_each_entry(cn, &cfg->string_list, list) {
+					i++;
+					if (strcmp(cn->configuration, "Conf 1")!= 0) {	
+						if (strcmp(cn->configuration, "adb") == 0) {
+							printk("usb: %s : make adb setting for gsi test \n",__func__);
+								list_for_each_entry_safe(f, tmp, &cfg->func_list, list) {
+									if (strcmp(f->name , "adb") == 0) {
+										printk("usb: %s remain adb function \n",__func__);
+										continue;
+									}
+									list_move_tail(&f->list, &gi->linked_func);
+								}
+								cfg->c.next_interface_id = 0;
+							}
+						}
+					} 
+				}
+#endif
 			ret = -EEXIST;
 			goto out;
 		}
@@ -538,6 +606,36 @@ static int config_usb_cfg_link(
 			}
 
 			fi->set_inst_eth_addr(fi, ethaddr);
+		}
+	}
+#endif
+
+#ifdef CONFIG_USB_CONFIGFS_UEVENT
+	/* Go through all configs, attach all functions */
+	list_for_each_entry(c, &gi->cdev.configs, list) {
+		struct config_usb_cfg *cfg;
+
+		cfg = container_of(c, struct config_usb_cfg, c);
+		if (!list_empty(&cfg->string_list)) {
+			i = 0;
+			list_for_each_entry(cn, &cfg->string_list, list) {
+				i++;
+				if (strcmp(cn->configuration, "Conf 1")!= 0) {			
+					if (strcmp(cn->configuration, "adb") == 0) {				
+						list_for_each_entry_safe(f, tmp, &gi->linked_func, list) {
+							if (strcmp(f->name , "adb") == 0) {
+								printk("usb: %s: GSI adb works(%s)\n",__func__, f->name);
+								list_move_tail(&f->list, &cfg->func_list);
+							}
+						}
+					}
+					gi->gsi_boot=1;
+					ret = 0;
+					goto out;
+				} else {
+					gi->gsi_boot=0;
+				}
+			}
 		}
 	}
 #endif
@@ -585,8 +683,17 @@ static int config_usb_cfg_unlink(
 
 	list_for_each_entry(f, &cfg->func_list, list) {
 		if (f->fi == fi) {
+#ifdef CONFIG_USB_CONFIGFS_UEVENT
+			if (gi->gsi_boot)
+				list_move_tail(&f->list, &gi->linked_func);
+			else {
+				list_del(&f->list);
+				usb_put_function(f);
+			}
+#else
 			list_del(&f->list);
 			usb_put_function(f);
+#endif
 			mutex_unlock(&gi->lock);
 			return 0;
 		}
@@ -1431,9 +1538,10 @@ static int configfs_composite_bind(struct usb_gadget *gadget,
 				gs->manufacturer;
 			gs->strings[USB_GADGET_PRODUCT_IDX].s = gs->product;
 #ifndef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
-			if (gs->serialnumber && !set_alt_serialnumber(gs))
-				pr_info("usb: serial number: %s\n",
-						gs->serialnumber);
+			if (!gs->serialnumber)
+				set_alt_serialnumber(gs);
+
+			pr_info("usb: serial number: %s\n", gs->serialnumber);
 #endif
 			gs->strings[USB_GADGET_SERIAL_IDX].s = gs->serialnumber;
 			i++;

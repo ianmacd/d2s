@@ -217,11 +217,6 @@ void ip_send_unicast_reply(struct sock *sk, struct sk_buff *skb,
 #define __NET_INC_STATS(net, field)	__SNMP_INC_STATS((net)->mib.net_statistics, field)
 #define NET_ADD_STATS(net, field, adnd)	SNMP_ADD_STATS((net)->mib.net_statistics, field, adnd)
 #define __NET_ADD_STATS(net, field, adnd) __SNMP_ADD_STATS((net)->mib.net_statistics, field, adnd)
-#ifdef CONFIG_NET_SUPPORT_DROPDUMP
-#define IP_DUMP_STATS(skb, field)	dev_queue_mib(skb, 0, field)
-#else
-#define IP_DUMP_STATS(skb, field)
-#endif
 
 u64 snmp_get_cpu_field(void __percpu *mib, int cpu, int offct);
 unsigned long snmp_fold_field(void __percpu *mib, int offt);
@@ -598,6 +593,8 @@ static inline int ip_options_echo(struct net *net, struct ip_options *dopt,
 }
 
 void ip_options_fragment(struct sk_buff *skb);
+int __ip_options_compile(struct net *net, struct ip_options *opt,
+			 struct sk_buff *skb, __be32 *info);
 int ip_options_compile(struct net *net, struct ip_options *opt,
 		       struct sk_buff *skb);
 int ip_options_get(struct net *net, struct ip_options_rcu **optp,
@@ -606,7 +603,7 @@ int ip_options_get_from_user(struct net *net, struct ip_options_rcu **optp,
 			     unsigned char __user *data, int optlen);
 void ip_options_undo(struct ip_options *opt);
 void ip_forward_options(struct sk_buff *skb);
-int ip_options_rcv_srr(struct sk_buff *skb);
+int ip_options_rcv_srr(struct sk_buff *skb, struct net_device *dev);
 
 /*
  *	Functions provided by ip_sockglue.c

@@ -968,6 +968,7 @@ config ARM64_PAN
 
 config ARM64_LSE_ATOMICS
 	bool "Atomic instructions"
+	default n
 	help
 	  As part of the Large System Extensions, ARMv8.1 introduces new
 	  atomic instructions that are designed specifically to scale in
@@ -991,8 +992,17 @@ config ARM64_VHE
 	  at runtime, and does not affect processors that do not
 	  implement this feature.
 
+config SEC_ARM64_LSE_ATOMICS
+	bool "Use LSE atomic instructions"
+	default n
+	select ARM64_LSE_ATOMICS
+	help
+	  Say Y here to make use of these instructions for the in-kernel
+	  atomic routines not dynamically but statically.
+
 config SEC_ARM64_LSE_SPINLOCK
 	bool "Use LSE atomics for spinlock"
+	depends on !SEC_ARM64_LSE_ATOMICS
 	default y
 	help
 	  Say Y here to make use of LSE instructions for spinlocks regardless
@@ -1392,3 +1402,10 @@ source "arch/arm64/crypto/Kconfig"
 endif
 
 source "lib/Kconfig"
+
+config FPSIMD_CORRUPTION_DETECT
+	bool "Detect for fpsimd has corruption"
+	default n
+	help
+	  If FPSIMD has corruption, use this feature for detect problem.
+

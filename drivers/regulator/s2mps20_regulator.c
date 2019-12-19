@@ -32,7 +32,7 @@
 #include <linux/debugfs.h>
 #include <linux/interrupt.h>
 #ifdef CONFIG_SEC_PM
-#include <linux/sec_sysfs.h>
+#include <linux/sec_class.h>
 
 struct device *ap_sub_pmic_dev;
 #endif /* CONFIG_SEC_PM */

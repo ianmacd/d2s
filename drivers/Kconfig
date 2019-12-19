@@ -27,8 +27,6 @@ source "drivers/mcps/Kconfig"
 
 source "drivers/misc/Kconfig"
 
-source "drivers/staging/samsung/sec_notifier/Kconfig"
-
 source "drivers/muic/Kconfig"
 
 source "drivers/ifconn/Kconfig"
@@ -240,4 +238,11 @@ source "drivers/fingerprint/Kconfig"
 source "drivers/five/Kconfig"
 
 #source "drivers/gator/Kconfig"
+
+source "drivers/security/samsung/icdrv/Kconfig"
+
+source "drivers/samsung/Kconfig"
+
+source "drivers/kperfmon/Kconfig"
+
 endmenu

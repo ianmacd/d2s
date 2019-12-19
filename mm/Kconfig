@@ -792,9 +792,10 @@ config MMAP_READAROUND_LIMIT
 	  during the sluggish situation. Add the hard upper-limit for
 	  mmap readaround.
 
+# IOPP-dirty_buffer-v2.0.4.14
 config LARGE_DIRTY_BUFFER
 	bool "Use large dirty_threshold value by enabling dirty_ratio"
-	default n
+	default y
 	help
 	 This config enables dirty_ratio/dirty_background_ratio,
 	 and it means large dirty_threshold value in 64bit architectures.
@@ -802,7 +803,7 @@ config LARGE_DIRTY_BUFFER
 
 config MAX_DIRTY_THRESH_PAGES
 	int "The upper bound of VM dirty_thresh value in number of pages"
-	default 0
+	default 25600
 	help
 	  This value is the upper bound of VM dirty-thresh. (0 means no limit.)
 	  It is only effective when dirty_ratio is used.
@@ -811,10 +812,29 @@ config MAX_DIRTY_THRESH_PAGES
 config RBIN
 	bool "RBIN memory support"
 	default n
-	depends on CMA
+	select CLEANCACHE
 	help
 	  This provides RBIN functionality in memory management.
-	  RBIN memory is similar with CMA. Only the movable allocations with
-	  __GFP_RBIN can be allocated in the RBIN memory. (In this way,
-	  we can differentiate the pages going to CMA and RBIN.) Currently,
-	  there is only one user of RBIN memory, ION RBIN heap.
+
+config KZEROD
+	bool "Support kzerod"
+	default n
+	depends on !NEED_MULTIPLE_NODES
+	help
+	  Support kzerod kernel thread which does prezeroing of free pages.
+
+config PAGE_BOOST
+	bool "PAGE_BOOST feature"
+	depends on MMU
+	default y
+	help
+	  Enable this for PAGE_BOOST feature
+
+config PAGE_BOOST_RECORDING
+	bool "PAGE_BOOST recording feature"
+	depends on PAGE_BOOST
+	default y
+	help
+	  Record Everything for the chosen process.
+	  As Android executes an app one by one, only allow 1 recording
+	  at a time.

@@ -27,6 +27,9 @@ static int derive_key_aes(const u8 *, const struct fscrypt_context *, u8 *,
 static int find_and_derive_key(const struct inode *inode,
 		const struct fscrypt_context *ctx, u8 *derived_key,
 		unsigned int derived_keysize) __attribute__((unused));
+static int find_and_derive_key_iv(const struct inode *inode,
+		const struct fscrypt_context *ctx,
+		u8 *derived_key, unsigned int derived_keysize, u8 *iv_key)  __attribute__((unused));
 #endif
 #ifdef CONFIG_FSCRYPT_SDP
 static int derive_fek(struct inode *inode,
@@ -131,6 +134,7 @@ find_and_lock_process_key(const char *prefix,
 			     key->description, payload->size, min_keysize);
 		goto invalid;
 	}
+
 	*payload_ret = payload;
 	return key;
 
@@ -194,7 +198,7 @@ static inline int __find_and_derive_key(const struct inode *inode,
 					u8 *derived_key, unsigned int derived_keysize,
 					struct fscrypt_info *ci)
 {
-#ifdef CONFIG_FS_CRYPTO_SEC_EXTENSION
+#ifdef CONFIG_CRYPTO_KBKDF_CTR_HMAC_SHA512
 	u8 *iv_key = NULL;
 
 	if (!S_ISREG(inode->i_mode))
@@ -449,7 +453,9 @@ int fscrypt_get_encryption_info(struct inode *inode)
 	struct fscrypt_mode *mode;
 	u8 *raw_key = NULL;
 	int res;
-
+#ifdef CONFIG_FSCRYPT_SDP
+	sdp_fs_command_t *cmd = NULL;
+#endif
 	if (inode->i_crypt_info)
 		return 0;
 
@@ -529,8 +535,19 @@ int fscrypt_get_encryption_info(struct inode *inode)
 
 		if (fscrypt_sdp_is_classified(crypt_info)) {
 			res = derive_fek(inode, &ctx, crypt_info, raw_key, mode->keysize);
-			if (res)
+			if (res) {
+				if (fscrypt_sdp_is_sensitive(crypt_info)) {
+					cmd = sdp_fs_command_alloc(FSOP_AUDIT_FAIL_DECRYPT,
+						current->tgid, crypt_info->ci_sdp_info->engine_id, -1,
+						inode->i_ino, res, GFP_NOFS);
+					if (cmd) {
+						sdp_fs_request(cmd, NULL);
+						sdp_fs_command_free(cmd);
+					}
+				}
 				goto out;
+			}
+
 			fscrypt_sdp_update_conv_status(crypt_info);
 			goto sdp_dek;
 		}
@@ -611,7 +628,7 @@ attach_ci:
 		crypt_info = NULL;
 #ifdef CONFIG_FSCRYPT_SDP
 	if (crypt_info == NULL) //Call only when i_crypt_info is loaded initially
-		fscrypt_sdp_finalize_tasks(inode, raw_key, (res ? res : mode->keysize));
+		fscrypt_sdp_finalize_tasks(inode, raw_key, mode->keysize);
 #endif
 out:
 	if (res == -ENOKEY)

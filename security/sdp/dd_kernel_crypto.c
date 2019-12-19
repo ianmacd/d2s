@@ -16,6 +16,7 @@
 #include <linux/file.h>
 
 #include "dd_common.h"
+#include "../../fs/crypto/sdp/sdp_crypto.h"
 
 #define DD_XTS_TWEAK_SIZE       16
 
@@ -33,7 +34,7 @@ extern int fscrypt_get_encryption_kek(struct inode *inode,
 								struct fscrypt_key *kek);
 extern int fscrypt_get_encryption_key(struct inode *inode, struct fscrypt_key *key);
 
-int dd_create_crypt_context(struct inode *inode, const struct dd_policy *policy) {
+int dd_create_crypt_context(struct inode *inode, const struct dd_policy *policy, void *fs_data) {
 	struct dd_crypt_context crypt_context;
 	int rc = 0;
 
@@ -76,7 +77,9 @@ int dd_create_crypt_context(struct inode *inode, const struct dd_policy *policy)
 
 		dd_dump("ddar master key", master_key.raw, master_key.size);
 
-		get_random_bytes(file_encryption_key, DD_AES_256_XTS_KEY_SIZE);
+		rc = sdp_crypto_generate_key(file_encryption_key, DD_AES_256_XTS_KEY_SIZE);
+		if (rc)
+			memset(file_encryption_key, 0, DD_AES_256_XTS_KEY_SIZE);
 
 		dd_dump("ddar file key", file_encryption_key, DD_AES_256_XTS_KEY_SIZE);
 
@@ -147,7 +150,7 @@ out:
 		dd_error("failed to create crypt context rc:%d\n", rc);
 		return rc;
 	}
-	return dd_write_crypt_context(inode, &crypt_context);
+	return dd_write_crypt_context(inode, &crypt_context, fs_data);
 }
 
 #if USE_KEYRING
@@ -555,6 +558,7 @@ int dd_sec_crypt_bio_pages(struct dd_info *info, struct bio *orig,
 			struct page *plaintext_page = orig_bv.bv_page;
 			struct page *ciphertext_page = clone_bv.bv_page;
 
+			BUG_ON(info->ino != orig_bv.bv_page->mapping->host->i_ino);
 			dd_dump("dd_crypto_bio_pages::encryption start", page_address(plaintext_page), PAGE_SIZE);
 			rc = dd_sec_crypt_page(info, DD_ENCRYPT, plaintext_page, ciphertext_page);
 			if (rc) {
@@ -569,6 +573,7 @@ int dd_sec_crypt_bio_pages(struct dd_info *info, struct bio *orig,
             struct bio_vec orig_bv = bio_iter_iovec(orig, orig->bi_iter);
             struct page *ciphertext_page = orig_bv.bv_page;
 
+			BUG_ON(info->ino != orig_bv.bv_page->mapping->host->i_ino);
 			dd_dump("dd_crypto_bio_pages::decryption start", page_address(ciphertext_page), PAGE_SIZE);
 			rc = dd_sec_crypt_page(info, DD_DECRYPT, ciphertext_page, ciphertext_page);
 			if (rc) {

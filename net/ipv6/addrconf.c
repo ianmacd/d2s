@@ -1093,6 +1093,41 @@ out:
 	goto out2;
 }
 
+#ifdef CONFIG_NETPM
+struct net_device *ip6_dev_find(struct net *net, const struct in6_addr *addr)
+{
+	struct net_device *result = NULL;
+	struct inet6_ifaddr *ifp;
+	unsigned int hash = inet6_addr_hash(addr);
+
+	rcu_read_lock();
+	hlist_for_each_entry_rcu(ifp, &inet6_addr_lst[hash], addr_lst) {
+		if (ipv6_addr_equal(&ifp->addr, addr)) {
+			struct net_device *dev = ifp->idev->dev;
+
+			pr_err("netpm: (v6) %s, 1: dev=%s\n", __func__, dev->name);
+
+			if (!net_eq(dev_net(dev), net))
+				continue;
+			result = dev;
+			break;
+		}
+	}
+	if (!result) {
+		struct rt6_info *rt = rt6_lookup(net, addr, NULL, 0, 0);
+
+		if (rt) {
+			result = rt->dst.dev;
+			pr_err("netpm: (v6) %s, 2: dev=%s\n", __func__, result->name);
+			ip6_rt_put(rt);
+		}
+	}
+
+	rcu_read_unlock();
+	return result;
+}
+#endif
+
 enum cleanup_prefix_rt_t {
 	CLEANUP_PREFIX_RT_NOP,    /* no cleanup action for prefix route */
 	CLEANUP_PREFIX_RT_DEL,    /* delete the prefix route */
@@ -1130,7 +1165,8 @@ check_cleanup_prefix_route(struct inet6_ifaddr *ifp, unsigned long *expires)
 	list_for_each_entry(ifa, &idev->addr_list, if_list) {
 		if (ifa == ifp)
 			continue;
-		if (!ipv6_prefix_equal(&ifa->addr, &ifp->addr,
+		if (ifa->prefix_len != ifp->prefix_len ||
+		    !ipv6_prefix_equal(&ifa->addr, &ifp->addr,
 				       ifp->prefix_len))
 			continue;
 		if (ifa->flags & (IFA_F_PERMANENT | IFA_F_NOPREFIXROUTE))

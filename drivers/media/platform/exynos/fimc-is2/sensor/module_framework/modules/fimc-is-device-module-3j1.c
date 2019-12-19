@@ -152,6 +152,12 @@ static struct fimc_is_sensor_cfg config_module_3j1[] = {
 		VC_IN(1, HW_FORMAT_RAW10, 1104, 276), VC_OUT(HW_FORMAT_RAW10, VC_NOTHING, 0, 0),
 		VC_IN(2, HW_FORMAT_UNKNOWN, 0, 0), VC_OUT(HW_FORMAT_USER, VC_MIPISTAT, 39424, 1),
 		VC_IN(3, HW_FORMAT_UNKNOWN, 0, 0), VC_OUT(HW_FORMAT_USER, VC_PRIVATE, 1756, 1)),
+	/* 2PD LR RAW : Face Recognition */
+	FIMC_IS_SENSOR_CFG_EX(3648, 2736, 30, 0, 0, CSI_DATA_LANES_4, 1807, CSI_MODE_VC_ONLY, PD_NONE, EX_PDSTAT_OFF,
+		VC_IN(0, HW_FORMAT_RAW10, 3648, 2736), VC_OUT(HW_FORMAT_RAW10, VC_NOTHING, 3648, 2736),
+		VC_IN(1, HW_FORMAT_RAW10, 3648, 684), VC_OUT(HW_FORMAT_RAW10, VC_NOTHING, 3648, 684),
+		VC_IN(2, HW_FORMAT_UNKNOWN, 0, 0), VC_OUT(HW_FORMAT_UNKNOWN, VC_NOTHING, 0, 0),
+		VC_IN(3, HW_FORMAT_UNKNOWN, 0, 0), VC_OUT(HW_FORMAT_UNKNOWN, VC_NOTHING, 0, 0)),
 };
 
 static const struct v4l2_subdev_core_ops core_ops = {
@@ -189,6 +195,7 @@ static int sensor_module_3j1_power_setpin(struct device *dev,
 	int gpio_mclk = 0;
 	int gpio_subcam_sel = 0;
 	u32 power_seq_id = 0;
+	bool use_mclk_share = false;
 
 	FIMC_BUG(!dev);
 
@@ -231,6 +238,11 @@ static int sensor_module_3j1_power_setpin(struct device *dev,
 		power_seq_id = 0;
 	}
 
+	use_mclk_share = of_property_read_bool(dnode, "use_mclk_share");
+	if (use_mclk_share) {
+		dev_info(dev, "use_mclk_share(%d)", use_mclk_share);
+	}
+
 	SET_PIN_INIT(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON);
 	SET_PIN_INIT(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF);
 
@@ -260,8 +272,10 @@ static int sensor_module_3j1_power_setpin(struct device *dev,
 	SET_PIN_SHARED(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON, SRT_ACQUIRE,
 			&core->shared_rsc_slock[SHARED_PIN5], &core->shared_rsc_count[SHARED_PIN5], 1);
 	SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON, gpio_none, "MCLK", PIN_MCLK, 1, 9000);
-	SET_PIN_SHARED(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON, SRT_ACQUIRE,
-			&core->shared_rsc_slock[SHARED_PIN9], &core->shared_rsc_count[SHARED_PIN9], 1);
+	if (use_mclk_share) {
+		SET_PIN_SHARED(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_ON, SRT_ACQUIRE,
+				&core->shared_rsc_slock[SHARED_PIN9], &core->shared_rsc_count[SHARED_PIN9], 1);
+	}
 
 	/*********** FRONT CAMERA  - POWER OFF **********/
 	if (gpio_is_valid(gpio_subcam_sel)) {
@@ -269,8 +283,10 @@ static int sensor_module_3j1_power_setpin(struct device *dev,
 	}
 	/* Mclock disable */
 	SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, gpio_none, "MCLK", PIN_MCLK, 0, 1);
-	SET_PIN_SHARED(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, SRT_RELEASE,
-			&core->shared_rsc_slock[SHARED_PIN9], &core->shared_rsc_count[SHARED_PIN9], 0);
+	if (use_mclk_share) {
+		SET_PIN_SHARED(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, SRT_RELEASE,
+				&core->shared_rsc_slock[SHARED_PIN9], &core->shared_rsc_count[SHARED_PIN9], 0);
+	}
 	SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, gpio_none, "pin", PIN_FUNCTION, 0, 0);
 	SET_PIN(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, gpio_none, "pin", PIN_FUNCTION, 1, 0);
 	SET_PIN_SHARED(pdata, SENSOR_SCENARIO_NORMAL, GPIO_SCENARIO_OFF, SRT_RELEASE,

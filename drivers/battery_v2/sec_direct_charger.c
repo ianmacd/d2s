@@ -41,11 +41,13 @@ void sec_direct_chg_init(struct sec_battery_info *battery, struct device *dev)
 
 void sec_direct_chg_monitor(struct sec_direct_charger_info *charger)
 {
-	pr_info("%s: Src(%s), direct(%s), switching(%s), Imax(%dmA), Ichg(%dmA), dc_input(%dmA)\n",
-		__func__, charger->charging_source ? "DIRECT" : "SWITCHING",
-		sec_direct_charger_mode_str[charger->charger_mode_direct],
-		sec_direct_charger_mode_str[charger->charger_mode_main],
-		charger->input_current, charger->charging_current, charger->dc_input_current);
+	if(charger->charging_source == SEC_DIRECT_CHG_CHARGING_SOURCE_DIRECT) {
+		pr_info("%s: Src(%s), direct(%s), switching(%s), Imax(%dmA), Ichg(%dmA), dc_input(%dmA)\n",
+			__func__, charger->charging_source ? "DIRECT" : "SWITCHING",
+			sec_direct_charger_mode_str[charger->charger_mode_direct],
+			sec_direct_charger_mode_str[charger->charger_mode_main],
+			charger->input_current, charger->charging_current, charger->dc_input_current);
+	}
 }
 
 static bool sec_direct_chg_set_direct_charge(
@@ -145,7 +147,8 @@ static int sec_direct_chg_check_charging_source(struct sec_direct_charger_info *
 				POWER_SUPPLY_EXT_PROP_CURRENT_EVENT, value);
 	if (((charger->bat_temp <= charger->pdata->dchg_temp_low_threshold) || (charger->bat_temp >= charger->pdata->dchg_temp_high_threshold)) ||
 		(value.intval & SEC_BAT_CURRENT_EVENT_SWELLING_MODE || value.intval & SEC_BAT_CURRENT_EVENT_HV_DISABLE ||
-		((value.intval & SEC_BAT_CURRENT_EVENT_DC_ERR) && charger->ta_alert_mode == OCP_NONE)))
+		((value.intval & SEC_BAT_CURRENT_EVENT_DC_ERR) && charger->ta_alert_mode == OCP_NONE) ||
+		value.intval & SEC_BAT_CURRENT_EVENT_SIOP_LIMIT))
 		return SEC_DIRECT_CHG_CHARGING_SOURCE_SWITCHING;
 
 	psy_do_property("battery", get,
@@ -654,6 +657,7 @@ static int sec_direct_charger_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, charger);
 	charger->dev = &pdev->dev;
 	direct_charger_cfg.drv_data = charger;
+	charger->ta_alert_mode = OCP_NONE;
 
 	mutex_init(&charger->charger_mutex);
 

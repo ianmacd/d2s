@@ -114,7 +114,11 @@ void g2d_hw_timeout_handler(unsigned long arg)
 			"killed task not dead" :
 			"no running task on queued tasks", ret);
 
-		goto out;
+		spin_unlock_irqrestore(&g2d_dev->lock_task, flags);
+
+		wake_up(&g2d_dev->freeze_wait);
+
+		return;
 	}
 
 	mod_timer(&task->hw_timer,
@@ -1005,6 +1009,7 @@ static int g2d_probe(struct platform_device *pdev)
 	}
 
 	init_waitqueue_head(&g2d_dev->freeze_wait);
+	init_waitqueue_head(&g2d_dev->queued_wait);
 
 	g2d_dev->pm_notifier.notifier_call = &g2d_notifier_event;
 	ret = register_pm_notifier(&g2d_dev->pm_notifier);

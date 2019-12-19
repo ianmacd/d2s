@@ -820,6 +820,7 @@ static ssize_t xlat_plat_store(struct kobject *kobj,
 		mif_err("-- unhandled plat prefix for device %s\n", ptr);
 	}
 
+	*(--ptr) = '@';
 	(void)klat_plat_store(kobj, attr, buf, count);
 
 	mif_err("plat prefix: %pI6\n", &nf_linkfwd.plat_prfix);
@@ -870,6 +871,7 @@ static ssize_t xlat_addrs_store(struct kobject *kobj,
 		mif_err("-- unhandled clat addr for device %s\n", ptr);
 	}
 
+	*(--ptr) = '@';
 	(void)klat_addrs_store(kobj, attr, buf, count);
 #else
 	mif_err("DIT NOT supported\n");
@@ -917,6 +919,7 @@ static ssize_t xlat_v4_addrs_store(struct kobject *kobj,
 		mif_err("-- unhandled clat v4 addr for device %s\n", ptr);
 	}
 
+	*(--ptr) = '@';
 	(void)klat_v4_addrs_store(kobj, attr, buf, count);
 #else
 	mif_err("DIT NOT supported\n");

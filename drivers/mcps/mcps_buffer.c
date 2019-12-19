@@ -195,7 +195,7 @@ static void flush_buffer(struct pending_info * info)
     struct pending_info_queue * pinfo_q;
 
     tracing_mark_writev('B',1111,"flush_buffer", info->hash);
-    if (!cpu_online(info->to)) {
+    if (!mcps_cpu_online(info->to)) {
         unsigned int lcpu = light_cpu(info->gro);
         info->to = lcpu;
         PRINT_PINFO("INFO->TO CORE OFFLINE SO UPDATED " , info);
@@ -356,7 +356,7 @@ int try_to_hqueue(unsigned int hash, unsigned int old , struct sk_buff * skb, u3
     // by this way we can keep order.
     _move_flow(hash, hdrcpu);
     PRINT_MQTCP_HASH_UINT("MOVED TO ", old, hash, (unsigned int)hdrcpu);
-    return 0;
+    return hdrcpu;
 
 }
 
@@ -494,7 +494,7 @@ int pending_migration
     pantry_unlock(pantry);
     local_irq_enable();
 
-    if(smp && cpu_online(from)) {
+    if(smp && mcps_cpu_online(from)) {
         smp_call_function_single_async(pantry->cpu , &pantry->csd);
     }
 

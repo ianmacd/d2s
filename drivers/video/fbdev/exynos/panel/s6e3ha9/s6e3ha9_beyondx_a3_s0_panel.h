@@ -39,6 +39,14 @@
 #include "../aod/aod_drv.h"
 #endif
 
+#ifdef CONFIG_DYNAMIC_FREQ
+#include "davinci2_df_tbl.h"
+#endif
+#ifdef CONFIG_SUPPORT_DISPLAY_PROFILER
+#include "s6e3ha9_profiler_panel.h"
+#include "../display_profiler/display_profiler.h"
+#endif
+
 #include "s6e3ha9_beyond_irc.h"
 
 #undef __pn_name__
@@ -627,6 +635,16 @@ static u8 beyondx_a3_s0_gram_inv_img_pattern_table[][1] = {
 };
 #endif
 
+#ifdef CONFIG_DYNAMIC_FREQ
+static u8 beyondx_a3_s0_dyn_ffc_table[][5] = {
+	{0x0D, 0x10, 0xB4, 0x3E, 0x0C},	//897
+	{0x0D, 0x10, 0xB4, 0x3D, 0x9A},	//903.5
+	{0x0D, 0x10, 0xB4, 0x3D, 0x29},	//910
+	{0x0D, 0x10, 0xB4, 0x3B, 0xE1},	//929.5
+};
+#endif
+
+
 static struct maptbl beyondx_a3_s0_maptbl[MAX_MAPTBL] = {
 	[GAMMA_MAPTBL] = DEFINE_2D_MAPTBL(beyondx_a3_s0_gamma_table, init_gamma_table, getidx_dimming_maptbl, copy_gamma_maptbl),
 	[AOR_MAPTBL] = DEFINE_2D_MAPTBL(beyondx_a3_s0_aor_table, init_aor_table, getidx_dimming_maptbl, copy_aor_maptbl),
@@ -672,6 +690,9 @@ static struct maptbl beyondx_a3_s0_maptbl[MAX_MAPTBL] = {
 #ifdef CONFIG_SUPPORT_ISC_TUNE_TEST
 	[ISC_THRESHOLD_MAPTBL] = DEFINE_0D_MAPTBL(beyondx_a3_s0_isc_thresh_hold_table, init_common_table, NULL, copy_isc_threshold_maptbl),
 	[STM_TUNE_MAPTBL] = DEFINE_0D_MAPTBL(beyondx_a3_s0_stm_tune_table, init_stm_tune, NULL, copy_stm_tune_maptbl),
+#endif
+#ifdef CONFIG_DYNAMIC_FREQ
+	[DYN_FFC_MAPTBL] = DEFINE_2D_MAPTBL(beyondx_a3_s0_dyn_ffc_table, init_common_table, getidx_dyn_ffc_table, copy_common_maptbl),
 #endif
 	[GAMMA_INTER_CONTROL_MAPTBL] = DEFINE_0D_MAPTBL(beyondx_a3_s0_gamma_inter_table, init_common_table, NULL, copy_gamma_inter_control_maptbl),
 	[POC_COMP_MAPTBL] = DEFINE_2D_MAPTBL(beyondx_a3_s0_poc_comp_table, init_common_table, getidx_dimming_maptbl, copy_common_maptbl),
@@ -860,11 +881,11 @@ static u8 BEYONDX_A3_S0_GAMMA_UPDATE_ENABLE[] = { 0xF7, 0x03 };
 static u8 BEYONDX_A3_S0_ACL_ONOFF[] = { 0x55, 0x00 };
 static u8 BEYONDX_A3_S0_ACL_CONTROL[] = { 0xB4, 0x00, 0x44, 0x80, 0x65, 0x26, 0x00 };
 static u8 BEYONDX_A3_S0_ACL_DIM_FRM[] = { 0xB4, 0x20 };
-#ifdef CONFIG_SUPPORT_DSU
+
 static u8 BEYONDX_A3_S0_SCALER[] = { 0xBA, 0x01, 0x26, 0x08, 0x08, 0xF3};
 static u8 BEYONDX_A3_S0_CASET[] = { 0x2A, 0x00, 0x00, 0x05, 0x9F };
 static u8 BEYONDX_A3_S0_PASET[] = { 0x2B, 0x00, 0x00, 0x09, 0xFF };
-#endif
+
 static u8 BEYONDX_A3_S0_LPM_AOR[] =  { 0xB1, 0x0B, 0xC8 }; /*AOR 98.4*/
 static u8 BEYONDX_A3_S0_LPM_NIT[] = {0xBB, 0x00, 0x0C, 0x00, 0x00, 0x9E, 0x00};
 static u8 BEYONDX_A3_S0_LPM_MODE[] = { 0x53, 0x00 };
@@ -1045,7 +1066,15 @@ static DEFINE_STATIC_PACKET(beyondx_a3_s0_exit_alpm, DSI_PKT_TYPE_WR, BEYONDX_A3
 static DEFINE_STATIC_PACKET(beyondx_a3_s0_te_off, DSI_PKT_TYPE_WR, BEYONDX_A3_S0_TE_OFF, 0);
 static DEFINE_STATIC_PACKET(beyondx_a3_s0_te_on, DSI_PKT_TYPE_WR, BEYONDX_A3_S0_TE_ON, 0);
 static DEFINE_STATIC_PACKET(beyondx_a3_s0_err_fg, DSI_PKT_TYPE_WR, BEYONDX_A3_S0_ERR_FG, 0);
+
+
+#ifdef CONFIG_DYNAMIC_FREQ
+static DEFINE_PKTUI(beyondx_a3_s0_ffc, &beyondx_a3_s0_maptbl[DYN_FFC_MAPTBL], 1);
+static DEFINE_VARIABLE_PACKET(beyondx_a3_s0_ffc, DSI_PKT_TYPE_WR_NO_WAKE, BEYONDX_A3_S0_FFC, 0);
+#else
 static DEFINE_STATIC_PACKET(beyondx_a3_s0_ffc, DSI_PKT_TYPE_WR, BEYONDX_A3_S0_FFC, 0);
+#endif
+
 static DEFINE_STATIC_PACKET(beyondx_a3_s0_tsp_hsync, DSI_PKT_TYPE_WR, BEYONDX_A3_S0_TSP_HSYNC, 0);
 
 static DEFINE_PKTUI(beyondx_a3_s0_dsc, &beyondx_a3_s0_maptbl[DSC_MAPTBL], 0);
@@ -1053,14 +1082,12 @@ static DEFINE_VARIABLE_PACKET(beyondx_a3_s0_dsc, DSI_PKT_TYPE_COMP, BEYONDX_A3_S
 static DEFINE_PKTUI(beyondx_a3_s0_pps, &beyondx_a3_s0_maptbl[PPS_MAPTBL], 0);
 static DEFINE_VARIABLE_PACKET(beyondx_a3_s0_pps, DSI_PKT_TYPE_PPS, BEYONDX_A3_S0_PPS, 0);
 
-#ifdef CONFIG_SUPPORT_DSU
 static DEFINE_PKTUI(beyondx_a3_s0_scaler, &beyondx_a3_s0_maptbl[SCALER_MAPTBL], 1);
 static DEFINE_VARIABLE_PACKET(beyondx_a3_s0_scaler, DSI_PKT_TYPE_WR, BEYONDX_A3_S0_SCALER, 0);
 static DEFINE_PKTUI(beyondx_a3_s0_caset, &beyondx_a3_s0_maptbl[CASET_MAPTBL], 1);
 static DEFINE_VARIABLE_PACKET(beyondx_a3_s0_caset, DSI_PKT_TYPE_WR, BEYONDX_A3_S0_CASET, 0);
 static DEFINE_PKTUI(beyondx_a3_s0_paset, &beyondx_a3_s0_maptbl[PASET_MAPTBL], 1);
 static DEFINE_VARIABLE_PACKET(beyondx_a3_s0_paset, DSI_PKT_TYPE_WR, BEYONDX_A3_S0_PASET, 0);
-#endif
 
 static DEFINE_STATIC_PACKET(beyondx_a3_s0_set_area, DSI_PKT_TYPE_WR, BEYONDX_A3_S0_SET_AREA, 0);
 static DEFINE_STATIC_PACKET(beyondx_a3_s0_lpm_aor, DSI_PKT_TYPE_WR, BEYONDX_A3_S0_LPM_AOR, 0);
@@ -1362,13 +1389,12 @@ static void *beyondx_a3_s0_init_cmdtbl[] = {
 	&s6e3ha9_restbl[RES_POC_CHKSUM],
 	&KEYINFO(beyondx_a3_s0_level2_key_disable),
 #endif
-#ifdef CONFIG_SUPPORT_DSU
 	&KEYINFO(beyondx_a3_s0_level2_key_enable),
 	&PKTINFO(beyondx_a3_s0_scaler),
 	&KEYINFO(beyondx_a3_s0_level2_key_disable),
 	&PKTINFO(beyondx_a3_s0_caset),
 	&PKTINFO(beyondx_a3_s0_paset),
-#endif
+
 	&KEYINFO(beyondx_a3_s0_level1_key_enable),
 	&PKTINFO(beyondx_a3_s0_set_area),
 	&PKTINFO(beyondx_a3_s0_te_on),
@@ -1557,6 +1583,12 @@ static void *beyondx_a3_s0_alpm_exit_cmdtbl[] = {
 static void *beyondx_a3_s0_gamma_inter_control_cmdtbl[] = {
 	&KEYINFO(beyondx_a3_s0_level2_key_enable),
 	&PKTINFO(beyondx_a3_s0_gamma_inter_control),
+	&KEYINFO(beyondx_a3_s0_level2_key_disable),
+};
+
+static void *beyondx_a3_s0_check_condition_cmdtbl[] = {
+	&KEYINFO(beyondx_a3_s0_level2_key_enable),
+	&s6e3ha9_dmptbl[DUMP_RDDPM],
 	&KEYINFO(beyondx_a3_s0_level2_key_disable),
 };
 
@@ -2014,18 +2046,24 @@ static void *beyondx_a3_s0_dummy_cmdtbl[] = {
 	&PKTINFO(beyondx_a3_s0_avc2_on),
 	&PKTINFO(beyondx_a3_s0_lpm_off_dyn_vlin),
 	&DLYINFO(beyondx_a3_s0_wait_1_frame_in_30hz),
-#ifdef CONFIG_SUPPORT_DSU
-	&KEYINFO(beyondx_a3_s0_level2_key_enable),
-	&PKTINFO(beyondx_a3_s0_scaler),
-	&KEYINFO(beyondx_a3_s0_level2_key_disable),
-	&PKTINFO(beyondx_a3_s0_caset),
-	&PKTINFO(beyondx_a3_s0_paset),
-
-	&KEYINFO(beyondx_a3_s0_level3_key_enable),
-	&KEYINFO(beyondx_a3_s0_level3_key_disable),
-#endif
-	&PKTINFO(beyondx_a3_s0_te_off),
+ 	&PKTINFO(beyondx_a3_s0_te_off),
 };
+
+
+#ifdef CONFIG_DYNAMIC_FREQ
+
+static DEFINE_STATIC_PACKET(bx_no_wake_level2_key_enable, DSI_PKT_TYPE_WR_NO_WAKE, BEYONDX_A3_S0_KEY2_ENABLE, 0);
+static DEFINE_PANEL_KEY(bx_no_wake_level2_key_enable, CMD_LEVEL_2, KEY_ENABLE, &PKTINFO(bx_no_wake_level2_key_enable));
+
+static DEFINE_STATIC_PACKET(bx_no_wake_level2_key_disable, DSI_PKT_TYPE_WR_NO_WAKE, BEYONDX_A3_S0_KEY2_DISABLE, 0);
+static DEFINE_PANEL_KEY(bx_no_wake_level2_key_disable, CMD_LEVEL_2, KEY_DISABLE, &PKTINFO(bx_no_wake_level2_key_disable));
+
+static void *beyondx_a3_s0_dynamic_ffc_cmdtbl[] = {
+	&KEYINFO(bx_no_wake_level2_key_enable),
+	&PKTINFO(beyondx_a3_s0_ffc),
+	&KEYINFO(bx_no_wake_level2_key_disable),
+};
+#endif
 
 static struct seqinfo beyondx_a3_s0_seqtbl[MAX_PANEL_SEQ] = {
 	[PANEL_INIT_SEQ] = SEQINFO_INIT("init-seq", beyondx_a3_s0_init_cmdtbl),
@@ -2091,10 +2129,22 @@ static struct seqinfo beyondx_a3_s0_seqtbl[MAX_PANEL_SEQ] = {
 	[PANEL_ISC_THRESHOLD_SEQ] = SEQINFO_INIT("isc-threshold-seq", beyondx_a3_s0_isc_threshold_cmdtbl),
 	[PANEL_STM_TUNE_SEQ] = SEQINFO_INIT("stm-tune-seq", beyondx_a3_s0_stm_tune_cmdtbl),
 #endif
+#ifdef CONFIG_DYNAMIC_FREQ
+	[PANEL_DYNAMIC_FFC_SEQ] = SEQINFO_INIT("dynamic-ffc-seq", beyondx_a3_s0_dynamic_ffc_cmdtbl),
+#endif
+
 	[PANEL_GAMMA_INTER_CONTROL_SEQ] = SEQINFO_INIT("gamma-control-seq", beyondx_a3_s0_gamma_inter_control_cmdtbl),
+	[PANEL_CHECK_CONDITION_SEQ] = SEQINFO_INIT("check-condition-seq", beyondx_a3_s0_check_condition_cmdtbl),
 	[PANEL_DUMP_SEQ] = SEQINFO_INIT("dump-seq", beyondx_a3_s0_dump_cmdtbl),
 	[PANEL_DUMMY_SEQ] = SEQINFO_INIT("dummy-seq", beyondx_a3_s0_dummy_cmdtbl),
 };
+
+#ifdef CONFIG_SUPPORT_POC_SPI
+struct spi_data s6e3ha9_beyond_spi_data = {
+	.spi_addr = 0x0,
+	.speed_hz = 10000000
+};
+#endif
 
 struct common_panel_info s6e3ha9_beyondx_a3_s0_utype_panel_info = {
 	.ldi_name = "s6e3ha9",
@@ -2134,6 +2184,12 @@ struct common_panel_info s6e3ha9_beyondx_a3_s0_utype_panel_info = {
 #endif
 #ifdef CONFIG_SUPPORT_DDI_FLASH
 	.poc_data = &s6e3ha9_beyond_poc_data,
+#endif
+#ifdef CONFIG_SUPPORT_POC_SPI
+	.spi_data = &s6e3ha9_beyond_spi_data,
+#endif
+#ifdef CONFIG_SUPPORT_DISPLAY_PROFILER
+	.profile_tune = &ha9_profiler_tune,
 #endif
 };
 
@@ -2176,6 +2232,16 @@ struct common_panel_info s6e3ha9_beyondx_a3_s0_default_panel_info = {
 #ifdef CONFIG_SUPPORT_DDI_FLASH
 	.poc_data = &s6e3ha9_beyond_poc_data,
 #endif
+#ifdef CONFIG_SUPPORT_POC_SPI
+	.spi_data = &s6e3ha9_beyond_spi_data,
+#endif
+#ifdef CONFIG_DYNAMIC_FREQ
+	.df_freq_tbl = d2_dynamic_freq_set,
+#endif
+#ifdef CONFIG_SUPPORT_DISPLAY_PROFILER
+	.profile_tune = &ha9_profiler_tune,
+#endif
+
 };
 
 static int __init s6e3ha9_beyondx_a3_s0_panel_init(void)

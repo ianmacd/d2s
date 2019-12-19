@@ -14,10 +14,9 @@
                         EX)  CLANG_TRIPLE=<android platform directory you download>/android/prebuilts/clang/host/linux-x86/clang-4639204/bin/aarch64-linux-gnu-
                         EX)  CLANG_TRIPLE=/usr/local/toolchain/clang/host/linux-x86/clang-4639204/bin/aarch64-linux-gnu- // check the location of toolchain     
         - to Build
-                $ export ANDROID_MAJOR_VERSION=p
-                $ export ARCH=arm64
-                $ make exynos9820-beyondx_defconfig
-                $ make
+                $ export ANDROID_MAJOR_VERSION=q
+                $ make ARCH=arm64 exynos9820-beyondx_defconfig
+                $ make ARCH=arm64
 
 2. Output files
         - Kernel : arch/arm64/boot/Image

@@ -915,7 +915,7 @@ err:
 }
 
 static ssize_t show_freqvar_idlelatency(struct kobject *kobj,
-				struct attribute *attr, char *buf)
+				struct kobj_attribute *attr, char *buf)
 {
 	struct exynos_cpufreq_domain *domain;
 	ssize_t count = 0;
@@ -946,7 +946,7 @@ static ssize_t show_freqvar_idlelatency(struct kobject *kobj,
 
 }
 
-static ssize_t store_freqvar_idlelatency(struct kobject *kobj, struct attribute *attr,
+static ssize_t store_freqvar_idlelatency(struct kobject *kobj, struct kobj_attribute *attr,
 					const char *buf, size_t count)
 {
 	struct exynos_cpufreq_domain *domain;
@@ -985,7 +985,7 @@ static ssize_t store_freqvar_idlelatency(struct kobject *kobj, struct attribute 
 	return count;
 }
 
-static struct global_attr freqvar_idlelatency =
+static struct kobj_attribute freqvar_idlelatency =
 __ATTR(freqvar_idlelatency, S_IRUGO | S_IWUSR,
 		show_freqvar_idlelatency, store_freqvar_idlelatency);
 

@@ -287,15 +287,13 @@ int max77705_get_apdo_max_power(unsigned int *pdo_pos, unsigned int *taMaxVol, u
 
 	if (*pdo_pos == 0) {
 		/* Get the proper PDO */
-		for (*taMaxVol; *taMaxVol >= 9800; *taMaxVol /= 2) {
-			for (i = 1; i <= pd_noti.sink_status.available_pdo_num; i++) {
-				if (pd_noti.sink_status.power_list[i].apdo) {
-					if (pd_noti.sink_status.power_list[i].max_voltage >= *taMaxVol) {
-						*pdo_pos = i;
-						*taMaxVol = pd_noti.sink_status.power_list[i].max_voltage;
-						*taMaxCur = pd_noti.sink_status.power_list[i].max_current;
-						break;
-					}
+		for (i = 1; i <= pd_noti.sink_status.available_pdo_num; i++) {
+			if (pd_noti.sink_status.power_list[i].apdo) {
+				if (pd_noti.sink_status.power_list[i].max_voltage >= *taMaxVol) {
+					*pdo_pos = i;
+					*taMaxVol = pd_noti.sink_status.power_list[i].max_voltage;
+					*taMaxCur = pd_noti.sink_status.power_list[i].max_current;
+					break;
 				}
 			}
 			if (*pdo_pos)
@@ -306,7 +304,7 @@ int max77705_get_apdo_max_power(unsigned int *pdo_pos, unsigned int *taMaxVol, u
 			pr_info("mv (%d) and ma (%d) out of range of APDO\n",
 				*taMaxVol, *taMaxCur);
 			ret = -EINVAL;
-		}	
+		}
 	} else {
 		/* If we already have pdo object position, we don't need to search max current */
 		ret = -ENOTSUPP;
@@ -317,7 +315,7 @@ int max77705_get_apdo_max_power(unsigned int *pdo_pos, unsigned int *taMaxVol, u
 	else
 		max77705_set_enable_pps(false, 0, 0);
 
-	pr_info(" %s : *pdo_pos(%d), *taMaxVol(%d), *maxCur(%d), *maxPwr(%d)\n",
+	pr_info("%s : *pdo_pos(%d), *taMaxVol(%d), *maxCur(%d), *maxPwr(%d)\n",
 		__func__, *pdo_pos, *taMaxVol, *taMaxCur, *taMaxPwr);
 		
 	return ret;
@@ -338,6 +336,34 @@ void max77705_usbc_icurr(u8 curr)
 	pr_info("%s : OPCODE(0x%02x) W_LENGTH(%d) R_LENGTH(%d) USBC_ILIM(0x%x)\n",
 		__func__, value.opcode, value.write_length, value.read_length, curr);
 
+}
+
+void max77705_set_gpio5_control(int direction, int output)
+{
+	struct max77705_usbc_platform_data *pusbpd = pd_noti.pusbpd;
+	usbc_cmd_data value;
+	u8 op_data1, op_data2;
+
+	if (direction)
+		op_data1 = 0xFF; // OUTPUT
+	else
+		op_data1 = 0x00; // INPUT
+
+	if (output)
+		op_data2 = 0xFF; // HIGH
+	else
+		op_data2 = 0x00; // LOW
+
+	init_usbc_cmd_data(&value);
+	value.opcode = OPCODE_SAMSUNG_GPIO5_CONTROL;
+	value.write_data[0] = op_data1;
+	value.write_data[1] = op_data2;
+	value.write_length = 2;
+	value.read_length = 0;
+	max77705_usbc_opcode_write(pusbpd, &value);
+
+	pr_info("%s : OPCODE(0x%02x) W_LENGTH(%d) R_LENGTH(%d) gpio5(0x%x, 0x%x)\n",
+		__func__, value.opcode, value.write_length, value.read_length, op_data1, op_data2);
 }
 
 void max77705_set_fw_noautoibus(int enable)
@@ -938,6 +964,17 @@ static void max77705_pd_check_pdmsg(struct max77705_usbc_platform_data *usbc_dat
 		usbc_data->manual_lpm_mode = 1;
 		msg_maxim("Current_Cable_Connected : [%x]", pd_msg);
 		break;
+	case SRC_CAP_RECEIVED:
+		msg_maxim("SRC_CAP_RECEIVED : [%x]", pd_msg);
+		/* set src cap flag before ps_rdy */
+		psy_charger = power_supply_get_by_name("battery");
+		if (psy_charger && !usbc_data->pd_data->psrdy_received) {
+			val.intval = 1;
+			psy_do_property("battery", set, POWER_SUPPLY_EXT_PROP_SRCCAP, val);
+		} else {
+			pr_err("%s: Fail to get psy battery\n", __func__);
+		}
+		break;
 	case Status_Received:
 		value.opcode = OPCODE_SAMSUNG_READ_MESSAGE;
 		value.write_data[0] = 0x02;
@@ -1274,7 +1311,6 @@ int max77705_pd_init(struct max77705_usbc_platform_data *usbc_data)
 	fp_sec_pd_select_pps = max77705_select_pps;
 	fp_sec_pd_get_apdo_max_power = max77705_get_apdo_max_power;
 #endif
-
 	wake_lock_init(&pd_data->pdmsg_wake_lock, WAKE_LOCK_SUSPEND,
 			   "pd->pdmsg");
 	wake_lock_init(&pd_data->datarole_wake_lock, WAKE_LOCK_SUSPEND,

@@ -18,9 +18,13 @@
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/of.h>
-#include <linux/sec_sysfs.h>
+#include <linux/sec_class.h>
+#include <linux/gpio.h>
 
 #include "secgpio_dvs.h"
+#ifdef CONFIG_SEC_FACTORY
+#include "pinctrl-samsung.h"
+#endif
 
 /*sys fs*/
 struct class *secgpio_dvs_class;
@@ -47,7 +51,9 @@ static ssize_t secgpio_read_request_gpio(
 static ssize_t secgpio_write_request_gpio(
         struct device *dev, struct device_attribute *attr,
         const char *buf, size_t size);
-
+static ssize_t secgpio_ctrl_request_gpio(
+        struct device *dev, struct device_attribute *attr,
+        const char *buf, size_t size);
 
 static DEVICE_ATTR(gpioinit_check, 0444,
 	checked_init_secgpio_file_read, NULL);
@@ -61,7 +67,8 @@ static DEVICE_ATTR(checked_sleepGPIO, 0444,
 	secgpio_checked_sleepgpio_read, NULL);
 static DEVICE_ATTR(check_requested_gpio, 0664,
         secgpio_read_request_gpio, secgpio_write_request_gpio);
-
+static DEVICE_ATTR(ctrl_requested_gpio, 0664,
+        NULL, secgpio_ctrl_request_gpio);
 
 static struct attribute *secgpio_dvs_attributes[] = {
 		&dev_attr_gpioinit_check.attr,
@@ -70,6 +77,7 @@ static struct attribute *secgpio_dvs_attributes[] = {
 		&dev_attr_check_sleep_detail.attr,
 		&dev_attr_checked_sleepGPIO.attr,
 		&dev_attr_check_requested_gpio.attr,
+		&dev_attr_ctrl_requested_gpio.attr,
 		NULL,
 };
 
@@ -158,36 +166,89 @@ static ssize_t secgpio_read_request_gpio(
         struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int val = -1;
-        struct gpio_dvs_t *gdvs = dev_get_drvdata(dev);
+	bool is_gpio_requested = false;
+	struct gpio_dvs_t *gdvs = dev_get_drvdata(dev);
 
-	if(gdvs->gpio_num >= 0 && gdvs->gpio_num < gdvs->count)
-		val = gdvs->read_gpio(gdvs->gpio_num);
+	if (!gpio_request(gdvs->gpio_num, NULL)) {
+		is_gpio_requested = true;
+		pr_info("[secgpio_dvs] %s: request gpio %d\n", __func__, gdvs->gpio_num);
+	}
+
+	val = gpio_get_value(gdvs->gpio_num);
+
+	if (is_gpio_requested)
+		gpio_free(gdvs->gpio_num);
         
-        return snprintf(buf, PAGE_SIZE, "GPIO[%d] : [%x]", gdvs->gpio_num, val);
+	return snprintf(buf, PAGE_SIZE, "GPIO[%d] : [%x]", gdvs->gpio_num, val);
 }
 
 static ssize_t secgpio_write_request_gpio(
         struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
 {
-        int ret;
-        struct gpio_dvs_t *gdvs = dev_get_drvdata(dev);
+	int ret;
+	struct gpio_dvs_t *gdvs = dev_get_drvdata(dev);
 
 	ret = sscanf(buf, "%d", &gdvs->gpio_num);
 
-	if(ret <= 0){
+	if (ret <= 0) {
 		pr_info("[secgpio_dvs] %s: fail to read input value\n", __func__);
-                return size;
+		return size;
 	}
 
-	if(gdvs->gpio_num < 0 || gdvs->gpio_num >= gdvs->count){
+	if (!gpio_is_valid(gdvs->gpio_num)) {
 		pr_info("[secgpio_dvs] %s: invalid gpio range\n", __func__);
-                return size;
+		return size;
 	}
 
-	pr_info("[secgpio_dvs] %s: requested_gpio: [%d]\n", __func__, gdvs->gpio_num);
+	pr_info("[secgpio_dvs] %s: write requested_gpio: [%d]\n", __func__, gdvs->gpio_num);
 	return size;
 }
 
+#ifdef CONFIG_SEC_FACTORY
+static ssize_t secgpio_ctrl_request_gpio(
+	struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
+{
+	int gpionum, gpiodir, gpioval, ret;
+	bool is_gpio_requested = false;
+
+	pr_info("[secgpio_dvs] %s: buf = %s\n", __func__, buf);
+
+	ret = sscanf(buf, "%d %d %d", &gpionum, &gpiodir, &gpioval);
+	if (ret <= 0) {
+		pr_info("[secgpio_dvs] %s: fail to read input buffer\n", __func__);
+		return size;
+	}
+
+	/*
+	 *      gpio_ctrl[0] = GPIO NUMBER, gpio_ctrl[1] = IN(0)/OUT(1),
+	 *      gpio_ctrl[2] = Output L(0)/H(1), Input Pull None(0)/Down(1)/Up(3)
+	 */
+	if (gpiodir == 0 && (gpioval == 0 || gpioval == 1 || gpioval == 3)) {
+		if (!gpio_request(gpionum, NULL))
+			is_gpio_requested = true;
+		pinctrl_gpio_set_config(gpionum, PINCFG_PACK(PINCFG_TYPE_FUNC, gpiodir));
+		pinctrl_gpio_set_config(gpionum, PINCFG_PACK(PINCFG_TYPE_DAT, 0));
+		pinctrl_gpio_set_config(gpionum, PINCFG_PACK(PINCFG_TYPE_PUD, gpioval));
+	} else if (gpiodir == 1 && (gpioval == 0 || gpioval == 1)) {
+		if (!gpio_request(gpionum, NULL))
+			is_gpio_requested = true;
+		pinctrl_gpio_set_config(gpionum, PINCFG_PACK(PINCFG_TYPE_FUNC, gpiodir));
+		pinctrl_gpio_set_config(gpionum, PINCFG_PACK(PINCFG_TYPE_DAT, gpioval));
+		pinctrl_gpio_set_config(gpionum, PINCFG_PACK(PINCFG_TYPE_PUD, 0));
+	} else
+		pr_info("[secgpio_dvs] %s: invalid arguments\n", __func__);
+
+	if (is_gpio_requested)
+		gpio_free(gpionum);
+	return size;
+}
+#else
+static ssize_t secgpio_ctrl_request_gpio(
+	struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
+{
+	return size;
+}
+#endif
 
 void gpio_dvs_check_initgpio(void)
 {

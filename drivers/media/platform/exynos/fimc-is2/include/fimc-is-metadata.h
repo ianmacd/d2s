@@ -736,6 +736,8 @@ enum aa_capture_intent {
 	AA_CAPTURE_INTENT_STILL_CAPTURE_SUPER_NIGHT_SHOT_TRIPOD,
 	AA_CAPTURE_INTENT_STILL_CAPTURE_CANCEL,
 	AA_CAPTURE_INTENT_STILL_CAPTURE_NORMAL_FLASH,
+	AA_CAPTURE_INTENT_STILL_CAPTURE_REMOSAIC_SINGLE,
+	AA_CAPTURE_INTENT_STILL_CAPTURE_REMOSAIC_MFHDR_DYNAMIC_SHOT,
 	AA_CAPTURE_INTENT_STILL_CAPTURE_LLHDR_VEHDR_DYNAMIC_SHOT,
 	AA_CAPTURE_INTENT_STILL_CAPTURE_VENR_DYNAMIC_SHOT,
 	AA_CAPTURE_INTENT_STILL_CAPTURE_LLS_FLASH,
@@ -1062,6 +1064,13 @@ enum aa_af_scene_change {
 	AA_AF_DETECTED,
 };
 
+enum aa_enable_dynamicshot {
+    AA_DYNAMICSHOT_SIMPLE = 0,
+    AA_DYNAMICSHOT_FULL,
+    AA_DYNAMICSHOT_HDR_ONLY,
+    AA_DYNAMICSHOT_LLS_ONLY,
+};
+
 struct camera2_video_output_size {
 	uint16_t			width;
 	uint16_t			height;
@@ -1106,7 +1115,7 @@ struct camera2_aa_ctl {
 	uint32_t			vendor_captureExposureTime;
 	float				vendor_objectDistanceCm;
 	int32_t				vendor_colorTempKelvin;
-	int32_t				vendor_enableDynamicShotDm;
+	enum aa_enable_dynamicshot	vendor_enableDynamicShotDm;
 	float				vendor_expBracketing[15];
 	float				vendor_expBracketingCapture;
 	enum aa_supernightmode		vendor_superNightShotMode;
@@ -1199,7 +1208,9 @@ struct camera2_aa_dm {
 	uint32_t			vendor_luxStandard;
 	int32_t				vendor_aeStats4VO[8];
 	int32_t				vendor_multiFrameEv;
-	uint32_t			vendor_reserved[9];
+	int32_t				vendor_faceToneWeight;
+	float				vendor_noiseIndex;
+	uint32_t			vendor_reserved[7];
 
 	// For dual
 	uint32_t			vendor_wideTeleConvEv;
@@ -1744,6 +1755,7 @@ enum camera_op_mode {
 	CAMERA_OP_MODE_FAC,
 	CAMERA_OP_MODE_HAL3_FAC,
 	CAMERA_OP_MODE_HAL3_SDK,
+	CAMERA_OP_MODE_HAL3_CAMERAX,
 };
 
 struct camera2_pdaf_single_result {
@@ -1970,6 +1982,12 @@ enum camera_client_index {
 	CAMERA_APP_CATEGORY_MAX
 };
 
+enum remosaic_oper_mode {
+	REMOSAIC_OPER_MODE_NONE = 0,
+	REMOSAIC_OPER_MODE_SINGLE = 1,
+	REMOSAIC_OPER_MODE_MFHDR = 2,
+};
+
 /** \brief
   User-defined control area.
   \remarks
@@ -2020,7 +2038,8 @@ struct camera2_uctl {
 	uint8_t				countryCode[4];
 	enum camera_motion_state	motionState;
 	enum camera_client_index	cameraClientIndex;
-	uint32_t			reserved[7];
+	int32_t 			remosaicResolutionMode;
+	uint32_t			reserved[6];
 };
 
 struct camera2_udm {

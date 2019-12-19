@@ -38,6 +38,10 @@ unsigned int pm_wakeup_irq __read_mostly;
 /* If greater than 0 and the system is suspending, terminate the suspend. */
 static atomic_t pm_abort_suspend __read_mostly;
 
+#ifdef CONFIG_SEC_PM_DEBUG
+bool pm_system_wakeup_without_irq_num;
+#endif
+
 /*
  * Combined counters of registered wakeup events and wakeup events in progress.
  * They need to be modified together atomically, so it's better to use one
@@ -120,7 +124,6 @@ void wakeup_source_drop(struct wakeup_source *ws)
 	if (!ws)
 		return;
 
-	del_timer_sync(&ws->timer);
 	__pm_relax(ws);
 }
 EXPORT_SYMBOL_GPL(wakeup_source_drop);
@@ -208,6 +211,13 @@ void wakeup_source_remove(struct wakeup_source *ws)
 	list_del_rcu(&ws->entry);
 	spin_unlock_irqrestore(&events_lock, flags);
 	synchronize_srcu(&wakeup_srcu);
+
+	del_timer_sync(&ws->timer);
+	/*
+	 * Clear timer.function to make wakeup_source_not_registered() treat
+	 * this wakeup source as not registered.
+	 */
+	ws->timer.function = NULL;
 }
 EXPORT_SYMBOL_GPL(wakeup_source_remove);
 
@@ -1010,6 +1020,9 @@ void pm_system_cancel_wakeup(void)
 void pm_wakeup_clear(bool reset)
 {
 	pm_wakeup_irq = 0;
+#ifdef CONFIG_SEC_PM_DEBUG
+	pm_system_wakeup_without_irq_num = false;
+#endif
 	if (reset)
 		atomic_set(&pm_abort_suspend, 0);
 }
@@ -1028,7 +1041,14 @@ void pm_system_irq_wakeup(unsigned int irq_number)
 					desc->action->name);
 		else
 			pr_info("PM: %s: %u\n", __func__, irq_number);
+
+		if (pm_system_wakeup_without_irq_num) {
+			pm_system_wakeup_without_irq_num = false;
+#ifdef CONFIG_SUSPEND
+			log_wakeup_reason(irq_number);
 #endif
+		}
+#endif /* CONFIG_SEC_PM_DEBUG */
 	}
 }
 

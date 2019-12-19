@@ -32,7 +32,7 @@
 #include <linux/of_gpio.h>
 #endif
 #include <linux/i2c/pcal6524.h>
-#include <linux/sec_sysfs.h>
+#include <linux/sec_class.h>
 
 struct pcal6524_chip {
 	struct i2c_client *client;
@@ -866,14 +866,8 @@ static int pcal6524_gpio_probe(struct i2c_client *client,
 		if (retry++ > 5) {
 			dev_err(&client->dev,
 					"Failed to expander retry[%d]\n", retry);
-#if 0
 			panic("pcal6524 i2c fail, check HW!\n");
-
 			goto err;
-#else
-			break;
-#endif
-
 		}
 		usleep_range(100, 200);
 	}
@@ -980,7 +974,7 @@ static int __init pcal6524_gpio_init(void)
 	return i2c_add_driver(&pcal6524_gpio_driver);
 }
 
-subsys_initcall_sync(pcal6524_gpio_init);
+subsys_initcall(pcal6524_gpio_init);
 
 static void __exit pcal6524_gpio_exit(void)
 {

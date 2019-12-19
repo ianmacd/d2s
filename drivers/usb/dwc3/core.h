@@ -550,7 +550,8 @@
 #define DWC3_DEV_IMOD_INTERVAL_SHIFT	0
 #define DWC3_DEV_IMOD_INTERVAL_MASK	(0xffff << 0)
 
-#define DWC3_LINK_STATE_INFO_LIMIT 10
+#define DWC3_LINK_STATE_INFO_LIMIT 15
+#define DWC3_LINK_STATE_LAST_INFO_MEM 8
 
 /* Structures */
 
@@ -1058,6 +1059,8 @@ struct dwc3 {
 	enum dwc3_ep0_state	ep0state;
 	enum dwc3_link_state	link_state;
 	u16 max_cnt_link_info;
+	unsigned int linkstate_record[DWC3_LINK_STATE_LAST_INFO_MEM];
+	u8 linkstate_ai;
 
 	u16			isoch_delay;
 	u16			u2sel;
@@ -1137,6 +1140,7 @@ struct dwc3 {
 	unsigned		sparse_transfer_control:1;
 	unsigned		is_not_vbus_pad:1;
 	unsigned		start_config_issued:1;
+	unsigned		vbus_state:1;
 
 	struct work_struct      set_vbus_current_work;
 	int			vbus_current; /* 100mA,  500mA,  900mA */

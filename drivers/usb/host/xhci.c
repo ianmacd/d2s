@@ -694,7 +694,6 @@ static void xhci_stop(struct usb_hcd *hcd)
 	pr_info("%s %d xhci->main_hcd = %pS\n", __func__, __LINE__, xhci->main_hcd);
 	/* Only halt host and free memory after both hcds are removed */
 	if (!usb_hcd_is_primary_hcd(hcd)) {
-		/* usb core will free this hcd shortly, unset pointer */
 		mutex_unlock(&xhci->mutex);
 		return;
 	}
@@ -941,6 +940,7 @@ int xhci_suspend(struct xhci_hcd *xhci, bool do_wakeup)
 	unsigned int		delay = XHCI_MAX_HALT_USEC;
 	struct usb_hcd		*hcd = xhci_to_hcd(xhci);
 	u32			command;
+	u32			res;
 
 	if (!hcd->state)
 		return 0;
@@ -992,11 +992,28 @@ int xhci_suspend(struct xhci_hcd *xhci, bool do_wakeup)
 	command = readl(&xhci->op_regs->command);
 	command |= CMD_CSS;
 	writel(command, &xhci->op_regs->command);
+	xhci->broken_suspend = 0;
 	if (xhci_handshake(&xhci->op_regs->status,
 				STS_SAVE, 0, 10 * 1000)) {
-		xhci_warn(xhci, "WARN: xHC save state timeout\n");
-		spin_unlock_irq(&xhci->lock);
-		return -ETIMEDOUT;
+	/*
+	 * AMD SNPS xHC 3.0 occasionally does not clear the
+	 * SSS bit of USBSTS and when driver tries to poll
+	 * to see if the xHC clears BIT(8) which never happens
+	 * and driver assumes that controller is not responding
+	 * and times out. To workaround this, its good to check
+	 * if SRE and HCE bits are not set (as per xhci
+	 * Section 5.4.2) and bypass the timeout.
+	 */
+		res = readl(&xhci->op_regs->status);
+		if ((xhci->quirks & XHCI_SNPS_BROKEN_SUSPEND) &&
+		    (((res & STS_SRE) == 0) &&
+				((res & STS_HCE) == 0))) {
+			xhci->broken_suspend = 1;
+		} else {
+			xhci_warn(xhci, "WARN: xHC save state timeout\n");
+			spin_unlock_irq(&xhci->lock);
+			return -ETIMEDOUT;
+		}
 	}
 	spin_unlock_irq(&xhci->lock);
 
@@ -1049,7 +1066,7 @@ int xhci_resume(struct xhci_hcd *xhci, bool hibernated)
 	set_bit(HCD_FLAG_HW_ACCESSIBLE, &xhci->shared_hcd->flags);
 
 	spin_lock_irq(&xhci->lock);
-	if (xhci->quirks & XHCI_RESET_ON_RESUME)
+	if ((xhci->quirks & XHCI_RESET_ON_RESUME) || xhci->broken_suspend)
 		hibernated = true;
 
 	if (!hibernated) {
@@ -3757,8 +3774,6 @@ int xhci_set_deq(struct xhci_hcd *xhci, struct xhci_container_ctx *ctx,
 	int i;
 	int last_ep_ctx = 31;
 
-	pr_info(">>>>>>> xhci_set_deq %d %x\n");
-
 	if (last_ep < 31)
 		last_ep_ctx = last_ep + 1;
 	for (i = 0; i < last_ep_ctx; ++i) {
@@ -3766,29 +3781,29 @@ int xhci_set_deq(struct xhci_hcd *xhci, struct xhci_container_ctx *ctx,
 		struct xhci_ep_ctx *ep_ctx = xhci_get_ep_ctx(xhci, ctx, i);
 
 		if (epaddr == udev->hwinfo.in_ep ) {
-			pr_info("[%s] set in deq : %#08llx \n",
-					__func__, ep_ctx->deq);
+			pr_info("[%s] set in eq addr: 0x%x \n",
+					__func__, epaddr);
 			if (udev->hwinfo.in_deq)
 				udev->hwinfo.old_in_deq =
 						udev->hwinfo.in_deq;
 			udev->hwinfo.in_deq = ep_ctx->deq;
 		} else if (epaddr == udev->hwinfo.out_ep) {
-			pr_info("[%s] set out deq : %#08llx \n",
-					__func__, ep_ctx->deq);
+			pr_info("[%s] set out deq addr: 0x%x \n",
+					__func__, epaddr);
 			if (udev->hwinfo.out_deq)
 				udev->hwinfo.old_out_deq =
 						udev->hwinfo.out_deq;
 			udev->hwinfo.out_deq = ep_ctx->deq;
 		} else if (epaddr == udev->hwinfo.fb_out_ep) {
-			pr_info("[%s] set fb out deq : %#08llx \n",
-					__func__, ep_ctx->deq);
+			pr_info("[%s] set fb out deq addr : 0x%x \n",
+					__func__, epaddr);
 			if (udev->hwinfo.fb_out_deq)
 				udev->hwinfo.fb_old_out_deq =
 						udev->hwinfo.fb_out_deq;
 			udev->hwinfo.fb_out_deq = ep_ctx->deq;
 		} else if (epaddr == udev->hwinfo.fb_in_ep) {
-			pr_info("[%s] set fb in deq : %#08llx \n",
-					__func__, ep_ctx->deq);
+			pr_info("[%s] set fb in deq addr: 0x%x \n",
+					__func__, epaddr);
 			if (udev->hwinfo.fb_in_deq)
 				udev->hwinfo.fb_old_in_deq =
 						udev->hwinfo.fb_in_deq;
@@ -4481,6 +4496,14 @@ static u16 xhci_calculate_u1_timeout(struct xhci_hcd *xhci,
 {
 	unsigned long long timeout_ns;
 
+	/* Prevent U1 if service interval is shorter than U1 exit latency */
+	if (usb_endpoint_xfer_int(desc) || usb_endpoint_xfer_isoc(desc)) {
+		if (xhci_service_interval_to_ns(desc) <= udev->u1_params.mel) {
+			dev_dbg(&udev->dev, "Disable U1, ESIT shorter than exit latency\n");
+			return USB3_LPM_DISABLED;
+		}
+	}
+
 	if (xhci->quirks & XHCI_INTEL_HOST)
 		timeout_ns = xhci_calculate_intel_u1_timeout(udev, desc);
 	else
@@ -4536,6 +4559,14 @@ static u16 xhci_calculate_u2_timeout(struct xhci_hcd *xhci,
 		struct usb_endpoint_descriptor *desc)
 {
 	unsigned long long timeout_ns;
+
+	/* Prevent U2 if service interval is shorter than U2 exit latency */
+	if (usb_endpoint_xfer_int(desc) || usb_endpoint_xfer_isoc(desc)) {
+		if (xhci_service_interval_to_ns(desc) <= udev->u2_params.mel) {
+			dev_dbg(&udev->dev, "Disable U2, ESIT shorter than exit latency\n");
+			return USB3_LPM_DISABLED;
+		}
+	}
 
 	if (xhci->quirks & XHCI_INTEL_HOST)
 		timeout_ns = xhci_calculate_intel_u2_timeout(udev, desc);
