@@ -235,6 +235,9 @@ void max77705_notify_dr_status(struct max77705_usbc_platform_data *usbpd_data, u
 			}
 			if (usbpd_data->is_host == HOST_OFF) {
 				usbpd_data->is_host = HOST_ON;
+#if defined(CONFIG_USB_AUDIO_ENHANCED_DETECT_TIME)
+				max77705_clk_booster_set(usbpd_data, 1);
+#endif
 				/* muic */
 				max77705_ccic_event_work(usbpd_data,
 					CCIC_NOTIFY_DEV_MUIC,
@@ -262,6 +265,9 @@ void max77705_notify_dr_status(struct max77705_usbc_platform_data *usbpd_data, u
 				schedule_delayed_work(&usbpd_data->acc_detach_work,
 					msecs_to_jiffies(0));
 		}
+#if defined(CONFIG_USB_AUDIO_ENHANCED_DETECT_TIME)
+		max77705_clk_booster_set(usbpd_data, 0);
+#endif
 		usbpd_data->mdm_block = 0;
 		usbpd_data->is_host = HOST_OFF;
 		usbpd_data->is_client = CLIENT_OFF;
@@ -532,6 +538,9 @@ static void max77705_ccstat_irq_handler(void *data, int irq)
 #if defined(CONFIG_USB_HOST_NOTIFY)
 	struct otg_notify *o_notify = get_otg_notify();
 #endif
+#ifdef CONFIG_USB_NOTIFY_PROC_LOG
+	int event;
+#endif
 
 	max77705_read_reg(usbc_data->muic, REG_CC_STATUS0, &cc_data->cc_status0);
 	ccstat =  (cc_data->cc_status0 & BIT_CCStat) >> FFS(BIT_CCStat);
@@ -689,6 +698,10 @@ static void max77705_ccstat_irq_handler(void *data, int irq)
 			break;
 	case cc_Audio_Accessory:
 			msg_maxim("ccstat : cc_Audio_Accessory");
+#ifdef CONFIG_USB_NOTIFY_PROC_LOG
+			event = NOTIFY_EXTRA_USB_ANALOGAUDIO;
+			store_usblog_notify(NOTIFY_EXTRA, (void *)&event, NULL);
+#endif
 			usbc_data->acc_type = CCIC_DOCK_TYPEC_ANALOG_EARPHONE;
 			max77705_process_check_accessory(usbc_data);
 			break;

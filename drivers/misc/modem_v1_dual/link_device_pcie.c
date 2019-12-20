@@ -50,6 +50,9 @@
 
 #define MIF_TX_QUOTA 64
 
+static inline void start_tx_timer(struct mem_link_device *mld,
+				  struct hrtimer *timer);
+
 #if !defined(CONFIG_CP_SECURE_BOOT)
 #define CRC32_XINIT 0xFFFFFFFFL		/* initial value */
 #define CRC32_XOROT 0xFFFFFFFFL		/* final xor value */
@@ -581,6 +584,7 @@ static void cmd_phone_start_handler(struct mem_link_device *mld)
 	modem_notify_event(MODEM_EVENT_ONLINE, mc);
 
 exit:
+	start_tx_timer(mld, &mld->sbd_print_timer);
 	spin_unlock_irqrestore(&mld->state_lock, flags);
 }
 
@@ -776,10 +780,13 @@ static enum hrtimer_restart tx_timer_func(struct hrtimer *timer)
 	}
 
 	cp_runtime_link(mc, LINK_TX_TIMER, 0);
-	spin_lock_irqsave(&mc->lock, flags);
 
-	if (unlikely(!ipc_active(mld)))
+	spin_lock_irqsave(&mc->lock, flags);
+	if (unlikely(!ipc_active(mld))) {
+		spin_unlock_irqrestore(&mc->lock, flags);
 		goto exit;
+	}
+	spin_unlock_irqrestore(&mc->lock, flags);
 
 #ifdef CONFIG_LINK_POWER_MANAGEMENT_WITH_FSM
 	if (mld->link_active) {
@@ -834,8 +841,16 @@ static enum hrtimer_restart tx_timer_func(struct hrtimer *timer)
 			need_schedule = true;
 	}
 
-	if (mask)
+	if (mask) {
+		spin_lock_irqsave(&mc->lock, flags);
+		if (unlikely(!ipc_active(mld))) {
+			spin_unlock_irqrestore(&mc->lock, flags);
+			need_schedule = false;
+			goto exit;
+		}
 		send_ipc_irq(mld, mask2int(mask));
+		spin_unlock_irqrestore(&mc->lock, flags);
+	}
 
 	spin_unlock_irqrestore(&mc->lock, flags);
 
@@ -2440,7 +2455,7 @@ static int mld_rx_int_poll(struct napi_struct *napi, int budget)
 #endif
 
 	if (total_ps_rcvd) {
-		mod_timer(&mld->cp_not_work, jiffies + 5 * 60 * HZ);
+		mod_timer(&mld->cp_not_work, jiffies + mld->not_work_time * HZ);
 	}
 
 	if (total_ps_rcvd < total_budget) {
@@ -3561,6 +3576,80 @@ static const struct attribute_group napi_group = {		\
 };
 #endif
 
+#define BUFF_SIZE 256
+static u32 p_pktproc[3];
+static u32 c_pktproc[3];
+static u32 p_rwpointer[4];
+static u32 c_rwpointer[4];
+
+static enum hrtimer_restart pktproc_print(struct hrtimer *timer)
+{
+	struct mem_link_device *mld = container_of(timer,
+						   struct mem_link_device,
+						   sbd_print_timer);
+	struct pktproc_adaptor *ppa = &mld->pktproc;
+	struct pktproc_queue *q;
+	int i;
+
+	struct sbd_link_device *sl = &mld->sbd_link_dev;
+	u16 id;
+	struct sbd_ring_buffer *rb[ULDL];
+	struct io_device *iod, *static_iod;
+	char buf[BUFF_SIZE];
+	int len = 0;
+
+	for (i = 0; i < ppa->num_queue; i++) {
+		q = ppa->q[i];
+
+		c_pktproc[0] = *q->fore_ptr;
+		c_pktproc[1] = *q->rear_ptr;
+		c_pktproc[2] = q->done_ptr;
+	}
+
+	if (likely(sbd_active(sl))) {
+		id = sbd_ch2id(sl, QOS_HIPRIO);
+		rb[TX] = &sl->ipc_dev[id].rb[TX];
+		rb[RX] = &sl->ipc_dev[id].rb[RX];
+
+		c_rwpointer[0] = *(u32 *)rb[TX]->rp;
+		c_rwpointer[1] = *(u32 *)rb[TX]->wp;
+		c_rwpointer[2] = *(u32 *)rb[RX]->rp;
+		c_rwpointer[3] = *(u32 *)rb[RX]->wp;
+	}
+
+	if (memcmp(p_pktproc, c_pktproc, sizeof(u32)*3) ||
+	    memcmp(p_rwpointer, c_rwpointer, sizeof(u32)*4))
+	{
+		mif_err("Queue:%d fore:%d rear:%d done:%d\n",
+			i, c_pktproc[0], c_pktproc[1], c_pktproc[2]);
+		memcpy(p_pktproc, c_pktproc, sizeof(u32)*3);
+		
+		mif_err("TX %04d/%04d %04d/%04d RX %04d/%04d %04d/%04d\n",
+			c_rwpointer[0] & 0xFFFF, c_rwpointer[1] & 0xFFFF,
+			c_rwpointer[0] >> 16, c_rwpointer[1] >> 16,
+			c_rwpointer[2] & 0xFFFF, c_rwpointer[3] & 0xFFFF,
+			c_rwpointer[2] >> 16, c_rwpointer[3] >> 16);
+		memcpy(p_rwpointer, c_rwpointer, sizeof(u32)*4);
+
+		static_iod = get_static_rmnet_iod_with_channel(rb[TX]->iod->id);
+		if (unlikely(!static_iod)) goto restart;
+		
+		spin_lock(&static_iod->msd->active_list_lock);
+		list_for_each_entry(iod, &static_iod->msd->activated_ndev_list, node_ndev) {
+			len += snprintf(buf + len, BUFF_SIZE - len, "%s: %lu/%lu ", iod->name, 
+							iod->ndev->stats.tx_packets, iod->ndev->stats.rx_packets);
+		}
+		spin_unlock(&static_iod->msd->active_list_lock);
+		
+		mif_err("%s\n", buf);
+	}
+
+restart:
+	hrtimer_forward_now(timer, ms_to_ktime(1000));
+
+	return HRTIMER_RESTART;
+}
+
 struct link_device *pcie_create_link_device(struct platform_device *pdev)
 {
 	struct modem_data *modem;
@@ -3809,6 +3898,10 @@ struct link_device *pcie_create_link_device(struct platform_device *pdev)
 		hrtimer_init(&mld->sbd_tx_timer,
 				CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 		mld->sbd_tx_timer.function = sbd_tx_timer_func;
+		
+		hrtimer_init(&mld->sbd_print_timer,
+				CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+		mld->sbd_print_timer.function = pktproc_print;
 
 		err = create_sbd_link_device(ld,
 				&mld->sbd_link_dev, mld->base, mld->size);
@@ -3936,6 +4029,7 @@ struct link_device *pcie_create_link_device(struct platform_device *pdev)
 	mld->cp_not_work.expires = jiffies;
 	mld->cp_not_work.function = handle_cp_not_work;
 	mld->cp_not_work.data = (unsigned long)mld;
+	mld->not_work_time = 60; // init to 1 min
 
 	mif_err("---\n");
 	return ld;
