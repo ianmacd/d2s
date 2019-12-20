@@ -80,6 +80,8 @@
 #include <linux/freecess.h>
 #endif
 
+int system_server_pid = 0;
+
 static HLIST_HEAD(binder_deferred_list);
 static DEFINE_MUTEX(binder_deferred_lock);
 
@@ -2220,8 +2222,18 @@ static struct binder_thread *binder_get_txn_from_and_acq_inner(
 
 static void binder_free_transaction(struct binder_transaction *t)
 {
-	if (t->buffer)
-		t->buffer->transaction = NULL;
+	struct binder_proc *target_proc = t->to_proc;
+
+	if (target_proc) {
+		binder_inner_proc_lock(target_proc);
+		if (t->buffer)
+			t->buffer->transaction = NULL;
+		binder_inner_proc_unlock(target_proc);
+	}
+	/*
+	 * If the transaction has no target_proc, then
+	 * t->buffer->transaction has already been cleared.
+	 */
 	kfree(t);
 	binder_stats_deleted(BINDER_STAT_TRANSACTION);
 }
@@ -2839,7 +2851,7 @@ static void print_binder_proc_inner(struct binder_proc *proc)
 		p_thread = rb_entry(pn, struct binder_thread, rb_node);
 		t = p_thread->transaction_stack;                   
 		if (t) {
-                        spin_lock(&t->lock);  
+			spin_lock(&t->lock);  
 			if (t->from != p_thread && t->to_thread == p_thread) { //incoming transaction
 				buffer = t->buffer;
 				if (buffer != NULL) {
@@ -2849,18 +2861,16 @@ static void print_binder_proc_inner(struct binder_proc *proc)
 						t->to_proc ? t->to_proc->pid : 0,
 						t->to_thread ? t->to_thread->pid : 0,
 						buffer->data_size, buffer->offsets_size);
-
 				} else {
 					pr_info("[%d] from %d:%d to %d:%d\n",
 						cnt, t->from ? t->from->proc->pid : 0,
 						t->from ? t->from->pid : 0,
 						t->to_proc ? t->to_proc->pid : 0,
 						t->to_thread ? t->to_thread->pid : 0);
-
 				}      
-                                cnt++;
+				cnt++;
 			}
-                        spin_unlock(&t->lock);
+			spin_unlock(&t->lock);
 		}                
 	}
 	binder_inner_proc_unlock(proc);
@@ -3027,6 +3037,67 @@ static struct binder_node *binder_get_node_refs_for_txn(
 	return target_node;
 }
 
+#ifdef CONFIG_SAMSUNG_FREECESS
+// 1) Skip first 8 bytes (useless data)
+// 2) Make sure that the invalid address issue is not occuring (j=9, j+=2)
+// 3) Java layer uses 2 bytes char. And only the first byte has the data. (p+=2)
+static void freecess_async_binder_report(struct binder_proc *proc,
+								struct binder_proc *target_proc,
+								struct binder_transaction_data *tr,
+								struct binder_transaction *t)
+{
+	char buf[INTERFACETOKEN_BUFF_SIZE] = {0};
+	int i = 0;
+	int j = 0;
+	int skip_bytes = 8;
+
+	if (!proc || !target_proc || !tr || !t)
+		return;
+
+	// for android P verson, skip 8 bytes; for Q version, skip 12 bytes;
+	if (freecess_fw_version == 0)
+		skip_bytes = 8;
+	else if (freecess_fw_version == 1)
+		skip_bytes = 12;
+
+	if ((tr->flags & TF_ONE_WAY) && target_proc
+		&& target_proc->tsk && target_proc->tsk->cred
+		&& (target_proc->tsk->cred->euid.val > 10000)
+		&& (proc->pid != target_proc->pid)) {
+		if (thread_group_is_frozen(target_proc->tsk)) {
+			if (t->buffer->data_size > skip_bytes) {
+				char *p = (char *)(t->buffer->data) + skip_bytes;
+				j = skip_bytes + 1;
+				while (i < INTERFACETOKEN_BUFF_SIZE && j < t->buffer->data_size && *p != '\0') {
+					buf[i++] = *p;
+					j+=2;
+					p+=2;
+				}
+				if (i == INTERFACETOKEN_BUFF_SIZE) buf[i-1] = '\0';
+			}
+			binder_report(target_proc->tsk, tr->code, buf, tr->flags & TF_ONE_WAY);
+		}
+	}
+}
+
+static void freecess_sync_binder_report(struct binder_proc *proc,
+								struct binder_proc *target_proc,
+								struct binder_transaction_data *tr)
+{
+	if (!proc || !target_proc || !tr)
+		return;
+
+	if ((!(tr->flags & TF_ONE_WAY)) && target_proc
+		&& target_proc->tsk && target_proc->tsk->cred
+		&& (target_proc->tsk->cred->euid.val > 10000)
+		&& (proc->pid != target_proc->pid) 
+		&& thread_group_is_frozen(target_proc->tsk)) {
+		//if sync binder, we don't need detecting info, so set code and interfacename as default value.
+		binder_report(target_proc->tsk, 0, "sync_binder", tr->flags & TF_ONE_WAY);
+	}
+}
+#endif
+
 static void binder_transaction(struct binder_proc *proc,
 			       struct binder_thread *thread,
 			       struct binder_transaction_data *tr, int reply,
@@ -3052,11 +3123,6 @@ static void binder_transaction(struct binder_proc *proc,
 	int t_debug_id = atomic_inc_return(&binder_last_id);
 	char *secctx = NULL;
 	u32 secctx_sz = 0;
-#ifdef CONFIG_SAMSUNG_FREECESS
-	char buf[INTERFACETOKEN_BUFF_SIZE] = {0};
-	int i = 0;
-	int j = 0;
-#endif
 
 	e = binder_transaction_log_add(&binder_transaction_log);
 	e->debug_id = t_debug_id;
@@ -3179,14 +3245,9 @@ static void binder_transaction(struct binder_proc *proc,
 			goto err_dead_binder;
 		}
 		e->to_node = target_node->debug_id;
+
 #ifdef CONFIG_SAMSUNG_FREECESS
-		if ((!(tr->flags & TF_ONE_WAY)) && target_proc
-			&& (target_proc->tsk->cred->euid.val > 10000)
-			&& (proc->pid != target_proc->pid) 
-			&& target_proc->tsk && thread_group_is_frozen(target_proc->tsk)) {
-			//if sync binder, we don't need detecting info, so set code and interfacename as default value.
-			binder_report(proc->tsk, target_proc->tsk, 0, "sync_binder", tr->flags & TF_ONE_WAY);
-		}
+		freecess_sync_binder_report(proc, target_proc, tr);
 #endif
 		if (security_binder_transaction(proc->tsk,
 						target_proc->tsk) < 0) {
@@ -3339,11 +3400,14 @@ static void binder_transaction(struct binder_proc *proc,
 		return_error_line = __LINE__;
 		t->buffer = NULL;
 		//[SAnP
-		if (return_error_param == -ENOSPC) {
-			mutex_lock(&binder_procs_lock);
-			print_binder_proc_inner(target_proc);  
-			mutex_unlock(&binder_procs_lock);   
-		}
+		// if (return_error_param == -ENOSPC) {
+		//	mutex_lock(&binder_procs_lock);
+		//	print_binder_proc_inner(target_proc);  
+		// 	mutex_unlock(&binder_procs_lock);   
+		// }
+        mutex_lock(&binder_procs_lock);
+        print_binder_proc_inner(target_proc);  
+        mutex_unlock(&binder_procs_lock);   
 		//SAnP]
 		goto err_binder_alloc_buf_failed;
 	}
@@ -3404,28 +3468,11 @@ static void binder_transaction(struct binder_proc *proc,
 		return_error_line = __LINE__;
 		goto err_bad_offset;
 	}
+
 #ifdef CONFIG_SAMSUNG_FREECESS
-	if ((tr->flags & TF_ONE_WAY) && target_proc
-		&& (target_proc->tsk->cred->euid.val > 10000)
-		&& (proc->pid != target_proc->pid)) {
-		if (target_proc->tsk && thread_group_is_frozen(target_proc->tsk)) {
-			// 1) Skip first 8 bytes (useless data)
-			// 2) Make sure that the invalid address issue is not occuring (j=9, j+=2)
-			// 3) Java layer uses 2 bytes char. And only the first byte has the data. (p+=2)
-			if (t->buffer->data_size > 8) {
-				char *p = (char *)(t->buffer->data) + 8;
-				j = 9;
-				while (i < INTERFACETOKEN_BUFF_SIZE && j < t->buffer->data_size && *p != '\0') {
-					buf[i++] = *p;
-					j+=2;
-					p+=2;
-				}
-				if (i == INTERFACETOKEN_BUFF_SIZE) buf[i-1] = '\0';
-			}
-			binder_report(proc->tsk, target_proc->tsk, tr->code, buf, tr->flags & TF_ONE_WAY);
-		}
-	}
+	freecess_async_binder_report(proc, target_proc, tr, t);
 #endif
+
 	off_end = (void *)off_start + tr->offsets_size;
 	sg_bufp = (u8 *)(PTR_ALIGN(off_end, sizeof(void *)));
 	sg_buf_end = sg_bufp + extra_buffers_size;
@@ -5123,6 +5170,14 @@ static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 		if (copy_to_user(ubuf, &info, sizeof(info))) {
 			ret = -EFAULT;
+			goto err;
+		}
+		break;
+	}
+	case BINDER_SET_SYSTEM_SERVER_PID: {
+		if (copy_from_user(&system_server_pid, ubuf,
+					sizeof(system_server_pid))) {
+			ret = -EINVAL;
 			goto err;
 		}
 		break;

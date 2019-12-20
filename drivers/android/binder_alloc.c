@@ -36,7 +36,7 @@
 
 struct list_lru binder_alloc_lru;
 
-int system_server_pid;
+extern int system_server_pid;
 
 static DEFINE_MUTEX(binder_alloc_mmap_lock);
 
@@ -401,12 +401,11 @@ static struct binder_buffer *binder_alloc_new_buf_locked(
 #ifdef CONFIG_SAMSUNG_FREECESS
 	if (is_async && (alloc->free_async_space < 3*(size + sizeof(struct binder_buffer))
 		|| (alloc->free_async_space < ((alloc->buffer_size/2)*9/10)))) {
-		pr_warn("will no more space [freed:%zd][alloc size:%zd], pid [%d]\n",alloc->free_async_space, size, alloc->pid);
 		rcu_read_lock();
 		p = find_task_by_vpid(alloc->pid);
 		rcu_read_unlock();
 		if (p != NULL && thread_group_is_frozen(p)) {
-			binder_report(current, p, -1, "free_buffer_full", is_async);
+			binder_report(p, -1, "free_buffer_full", is_async);
 		}
 	}
 #endif
@@ -770,10 +769,6 @@ int binder_alloc_mmap_handler(struct binder_alloc *alloc,
 	buffer->free = 1;
 	binder_insert_free_buffer(alloc, buffer);
 	alloc->free_async_space = alloc->buffer_size / 2;
-	if (alloc->free_async_space == 1044480) {
-		// This is system_server
-		system_server_pid = alloc->pid;
-	}
 	binder_alloc_set_vma(alloc, vma);
 	mmgrab(alloc->vma_vm_mm);
 

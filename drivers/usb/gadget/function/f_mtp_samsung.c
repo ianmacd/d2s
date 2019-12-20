@@ -235,7 +235,7 @@ static struct usb_ss_ep_comp_descriptor mtpg_superspeed_bulk_comp_desc = {
 	.bDescriptorType =      USB_DT_SS_ENDPOINT_COMP,
 
 	/* the following 2 values can be tweaked if necessary */
-	.bMaxBurst =         4,
+	.bMaxBurst =         15,
 	/* .bmAttributes =      0, */
 };
 
@@ -776,7 +776,6 @@ requeue_req:
 			r = ret;
 			printk(KERN_DEBUG "[%s]\t%d after ret=%d brk ret=%d\n",
 						 __func__, __LINE__, ret, r);
-			dev->cancel_io = 1;
 			break;
 		}
 	}
