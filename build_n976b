@@ -1,6 +1,6 @@
 #!/bin/sh -x
 
-export ANDROID_MAJOR_VERSION=p
+export ANDROID_MAJOR_VERSION=q
 export CROSS_COMPILE=~/Android/Sdk/ndk-bundle-r18b/toolchains/aarch64-linux-android-4.9/prebuilt/linux-x86_64/bin/aarch64-linux-android-
 
 cp -p ./arch/arm64/boot/dts/Makefile-n976b ./arch/arm64/boot/dts/Makefile
