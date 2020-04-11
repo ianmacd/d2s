@@ -15,7 +15,7 @@
                         EX)  CLANG_TRIPLE=<android platform directory you download>/android/prebuilts/clang/host/linux-x86/clang-4639204-cfp-jopp/bin/aarch64-linux-gnu-
                         EX)  CLANG_TRIPLE=/usr/local/toolchain/clang/host/linux-x86/clang-4639204-cfp-jopp/bin/aarch64-linux-gnu- // check the location of toolchain     
         - to Build
-                $ export ANDROID_MAJOR_VERSION=p
+                $ export ANDROID_MAJOR_VERSION=q
                 $ make ARCH=arm64 exynos9820-d2x_defconfig
                 $ make ARCH=arm64
 
