@@ -1,5 +1,9 @@
 ################################################################################
-1. How to Build
+1. Download and unzip the kernel source of N970FXXU4CTE9.
+
+2. Unzip and update the kernel source of N970FXXS6CTGA.
+
+3. How to Build
         - get Toolchain
                 From android git server, codesourcery and etc ..
                 - toolchain/gcc-cfp/gcc-cfp-jopp-only/aarch64-linux-android-4.9/bin/aarch64-linux-android-
@@ -19,10 +23,10 @@
                 $ make ARCH=arm64 exynos9820-d1_defconfig
                 $ make ARCH=arm64
 
-2. Output files
+4. Output files
         - Kernel : arch/arm64/boot/Image
         - module : drivers/*/*.ko
 
-3. How to Clean
+5. How to Clean
         $ make clean
 ################################################################################
