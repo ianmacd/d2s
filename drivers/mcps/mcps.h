@@ -1,4 +1,4 @@
-﻿#ifndef _MCTCP_H
+#ifndef _MCTCP_H
 #define _MCTCP_H
 
 #include <linux/skbuff.h>
