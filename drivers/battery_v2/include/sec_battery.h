@@ -668,7 +668,6 @@ struct sec_battery_info {
 extern bool sleep_mode;
 extern bool mfc_fw_update;
 extern bool boot_complete;
-extern bool dt_need_overwrite;
 
 extern void select_pdo(int num);
 #if defined(CONFIG_PDIC_PD30)

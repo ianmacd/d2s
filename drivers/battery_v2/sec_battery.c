@@ -22,7 +22,6 @@
 
 bool sleep_mode = false;
 bool batt_boot_complete = false;
-bool dt_need_overwrite = false;
 
 static enum power_supply_property sec_battery_props[] = {
 	POWER_SUPPLY_PROP_STATUS,
@@ -8003,51 +8002,6 @@ static const struct power_supply_desc ps_power_supply_desc = {
 	.set_property = sec_ps_set_property,
 };
 
-#if defined(CONFIG_BATTERY_LOW_TEMP_PROTECT)
-#define SALE_CODE_STR_LEN		3
-static char sales_code_from_cmdline[SALE_CODE_STR_LEN + 1];
-
-static int __init sales_code_setup(char *str)
-{
-	strlcpy(sales_code_from_cmdline, str,
-			ARRAY_SIZE(sales_code_from_cmdline));
-
-	return 1;
-}
-__setup("sales_code=", sales_code_setup);
-
-bool sales_code_is(char* str)
-{
-	return !strncmp(sales_code_from_cmdline, str,
-						SALE_CODE_STR_LEN + 1);
-}
-
-static bool battery_low_temp_protect(void)
-{
-	pr_info("%s sales code = %s\n", __func__, sales_code_from_cmdline);
-
-	if(sales_code_is("AFG") ||
-		sales_code_is("BTC") ||
-		sales_code_is("EGY") ||
-		sales_code_is("FWD") ||
-		sales_code_is("ILO") ||
-		sales_code_is("KSA") ||
-		sales_code_is("LYS") ||
-		sales_code_is("MID") ||
-		sales_code_is("MWD") ||
-		sales_code_is("PAK") ||
-		sales_code_is("TUN") ||
-		sales_code_is("TUR") ||
-		sales_code_is("XSG") ||
-		sales_code_is("INS") ||
-		sales_code_is("INU")) {
-		pr_info("%s slaes check done\n", __func__);
-		return true;
-	} else
-		return false;
-}
-#endif
-
 static int sec_battery_probe(struct platform_device *pdev)
 {
 	sec_battery_platform_data_t *pdata = NULL;
@@ -8063,10 +8017,6 @@ static int sec_battery_probe(struct platform_device *pdev)
 
 	dev_info(&pdev->dev,
 		"%s: SEC Battery Driver Loading\n", __func__);
-
-#if defined(CONFIG_BATTERY_LOW_TEMP_PROTECT)
-	dt_need_overwrite = battery_low_temp_protect();
-#endif
 
 	battery = kzalloc(sizeof(*battery), GFP_KERNEL);
 	if (!battery)
@@ -8458,12 +8408,6 @@ static int sec_battery_probe(struct platform_device *pdev)
 		dev_err(battery->dev,
 			"%s : Failed to create_attrs\n", __func__);
 		goto err_req_irq;
-	}
-
-	if (dt_need_overwrite) {
-		value.intval = battery->pdata->swelling_low_temp_block_4th;
-		psy_do_property(battery->pdata->charger_name, set,
-						POWER_SUPPLY_EXT_PROP_DEFAULT_CURRENT, value);
 	}
 
 	/* initialize battery level*/
